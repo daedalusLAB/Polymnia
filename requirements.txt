@@ -13,6 +13,8 @@ praat-parselmouth
 
 # Data handling and storage
 pandas
+numpy>=1.26
+scipy>=1.11
 duckdb
 pyarrow
 

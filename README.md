@@ -210,6 +210,60 @@ python3 hefesto.py \
 
 
 
+## Optional neck-relative gesture features
+
+After merging with `hefesto.py`, run `gestures.py` to derive wrist geometry and
+kinematics. This is movement measurement, **not recognition of named gestures**.
+The source DuckDB is opened **read-only**. Results go into a **new** folder:
+`gesture_frames.parquet`, `gesture_sequences.parquet`, and `gesture_config.json`.
+
+```bash
+python3 gestures.py --db_name ./output/dataset.duckdb \
+  --output_folder ./output/gestures \
+  --max-gap-frames 3 --min-keypoint-confidence 0.2
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--db_name`, `--table_name` | required, `multi_data` | existing database and long-format pose table |
+| `--output_folder` | required | directory to create; existing paths are never replaced |
+| `--min-keypoint-confidence` | `0.2` | inclusive wrist threshold; confidence zero is always absent |
+| `--max-gap-frames` | `3` | maximum internal coordinate/clock gap to interpolate; `0` disables interpolation |
+| `--window-size`, `--poly-order` | `7`, `2` | odd smoothing window and smaller polynomial order; short runs adapt; window `1` disables smoothing |
+
+Hyphen/underscore aliases are accepted, but conflicting values are rejected.
+The input must use **BODY_25** and dfMaker's default fast normalization:
+origin **neck (point 1)**, wrists **4/7**, **Y positive up**. Scale comes from the
+neck-to-point-5 shoulder X component, not bilateral shoulder span or a rotated
+basis. The adapter verifies the origin per clip/person. Distances are normalized
+units, speeds units/s, accelerations units/s² — not metres or kinetic energy.
+
+Calculation is isolated by `id`/`people_id`, ordered by frame. IDs are used as
+provided: this stage does not track people or repair changing detection order.
+Geometry needs one usable sample; velocity two connected timed samples;
+acceleration three. Between-hand features require both wrists. NULL means missing
+evidence, not zero movement. Outputs include positions, neck distance/angle,
+above-neck flags, velocity/acceleration, connected path lengths, separation,
+centroids, mirror residuals, and per-sequence summaries. There are no labels,
+class-aware scores, batch-dependent scaling, q-cut rings, or coordination proxies.
+
+Coverage is the **observed frame span**, not the whole video. Internal gaps up to
+the configured limit may be estimated and flagged; edges are never extrapolated
+and long gaps stay NULL. Untimed source frames are retained with geometry.
+`timestamp_inferred` identifies estimated clocks; `clock_known` indicates available
+clocks. Without a clock, smoothing and temporal features stop. Sequence timing
+uses the known-clock span, with explicit timed/inferred/missing counts; a peak on
+an untimed frame has a NULL time-to-peak. Irregular timed samples use a local
+polynomial fit rather than assuming uniform FPS. Configuration JSON records
+parameters, schema, units, versions and source-clock/origin checks.
+
+Publication uses Linux `renameat2(RENAME_NOREPLACE)` and fails closed on unsupported
+platforms. Even a concurrent empty destination is preserved. For CPU-only tests,
+run `python3 tools/test_gesture_features.py` and `python3 tools/test_gestures_cli.py`.
+These use known trajectories and temporary synthetic databases, not live models.
+For notebook usage, see `compute_gesture_features(wide_dataframe, config)` in
+[`gesture_features.py`](gesture_features.py).
+
 ## 📁 Output Structure
 
 ```
