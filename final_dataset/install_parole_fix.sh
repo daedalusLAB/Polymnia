@@ -13,8 +13,18 @@
 set -euo pipefail
 
 AQUI="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"   # final_dataset/
-RAIZ="$(dirname "$AQUI")"                                                    # raiz de trendsI
-DEST="$RAIZ/Polymnia"
+RAIZ="$(dirname "$AQUI")"
+# Layout detection. This directory used to sit next to the checkout
+# (trendsI/final_dataset beside trendsI/Polymnia) and now lives inside it as
+# Polymnia/final_dataset. The parent directory name says nothing either way, so
+# ask the tree where the wrapper is instead of assuming a name.
+if [ -e "$RAIZ/bin/polymnia" ]; then
+  DEST="$RAIZ"                          # Polymnia/final_dataset/ (repo layout since PR #8)
+elif [ -e "$RAIZ/Polymnia/bin/polymnia" ]; then
+  DEST="$RAIZ/Polymnia"                 # trendsI/final_dataset/ beside trendsI/Polymnia/
+else
+  DEST="$RAIZ/Polymnia"                 # unknown: the check below prints the path it looked for
+fi
 COMPROBAR=0
 
 while [ $# -gt 0 ]; do

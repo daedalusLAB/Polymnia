@@ -45,24 +45,91 @@ are managed with [uv](https://docs.astral.sh/uv/); the project selects Python 3.
 and PyTorch 2.8-compatible CUDA 12.8 builds on non-macOS x86_64/AMD64.
 Other platforms are not established as supported end-to-end configurations.
 
-From the repository root:
+### Bootstrap on an account that has nothing yet
+
+Three things finish the setup: this block, OpenPose compiled by whoever administers
+the machine (step 8 reports it), and the two TalkNet weights, which are not in any
+Git repository (step 4 says why). Run it from the account that will do the work: the
+virtual environment, `uv` and the cache directories are all per-user.
 
 ```bash
+# One work root holds the checkout. The pipeline creates its lots in the directory
+# you launch it from, and looks for TalkNet-ASD and modelos/ next to the repo.
+export POLYMNIA_WORK="$HOME/polymnia-work"
+mkdir -p "$POLYMNIA_WORK" && cd "$POLYMNIA_WORK"
+
+# 1. uv, installed per account (it lives in your own home directory)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"        # or just open a new shell
+cd "$POLYMNIA_WORK"
+
+# 2. the repository and its Python environment
+git clone https://github.com/daedalusLAB/Polymnia.git
+cd Polymnia
 uv sync --frozen --extra asd
-./bin/polymnia help
+
+# 3. Parole, vendored under create_datasets/, plus the prosody fix this repo keeps
+#    a canonical copy of (create_datasets/ is in .gitignore, so it is not in the clone)
+git clone https://github.com/daedalusLAB/parole create_datasets/parole
+( cd create_datasets/parole && bash install_parole.sh )  # Praat and the R packages; its README lists options
+bash final_dataset/install_parole_fix.sh               # install the canonical scripts
+bash final_dataset/install_parole_fix.sh --comprobar   # must agree with the canonical copies
+
+# 4. TalkNet-ASD as a sibling of the repo. Clone this fork rather than plain
+#    upstream: it carries the fixes this pipeline runs on (speaker selection,
+#    missing track ids, fps as a float). State in use: e802c54d33bdf4fbdb6d3bcb24ffec9883d8ff02.
+git clone https://github.com/raul-agent/TalkNet-ASD.git ../TalkNet-ASD
+#    Its two weights are ignored by that repo (*.pth, *.model), so no clone has them;
+#    copy them from a machine that already ran a pipeline, and check them:
+#      89844381  model/faceDetector/s3fd/sfd_face.pth
+#                d54a87c2b7543b64729c9a25eafd188da15fd3f6e02f0ecec76ae1b30d86c491
+#      63227827  pretrain_TalkSet.model
+#                d985ddd07dca08864a28337726f5b7d91b6426bebc7327f0e9b21cf9ff1cc937
+#    Copy with `cp -r`, never `cp -a`: the source files are mode 600 and -a keeps
+#    that mode, which locks the next user out of the ASD stage.
+
+# 5. DuckDB CLI. uv installs the Python binding, not the command line tool.
+mkdir -p tools/bin
+curl -L -o /tmp/duckdb.zip \
+  https://github.com/duckdb/duckdb/releases/download/v1.5.6/duckdb_cli-linux-amd64.zip
+unzip -o -d tools/bin /tmp/duckdb.zip && chmod +x tools/bin/duckdb
+tools/bin/duckdb --version                   # v1.5.6 (Variegata) 069cc9f9b5
+
+# 6. YOLO pose weights, needed by the wrist prescreen (stage 4 of
+#    final_dataset/pipeline_lote.sh). A sibling modelos/ is found automatically;
+#    POLYMNIA_YOLO_WEIGHTS=/absolute/path overrides the location.
+mkdir -p ../modelos
+curl -L -o ../modelos/yolo11x-pose.pt \
+  https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x-pose.pt
+
+# 7. check the downloads against values measured on a machine that works
+sha256sum -c - <<'SUMS'
+61238cfbe9dfeaad4bcfcd8a48f6f7123dae2e9603aaadb1f77a4217aeb8980c  tools/bin/duckdb
+013c43543b0751b8918486ba96e01ee44a59040683a07f96cc22bcc2cb7785f8  ../modelos/yolo11x-pose.pt
+SUMS
+
+# 8. what is still missing, with the path it looked for
 ./bin/polymnia doctor
 ```
+
+Step 7 is not decoration: the two hashes above are the SHA-256 of what those two URLs
+serve today, and `doctor` compares presence, not content. If a hash differs you have a
+different artifact, and `informes/procedencia.json` would later record a weight nobody
+can name.
+
+### What `uv sync` does not install
 
 `uv sync` installs Python dependencies, **not the external tools or model weights**:
 
 | Dependency | Required setup |
 |---|---|
 | OpenPose | Compiled binary; default root `/opt/openpose`, or `--openpose_path` for `argos` |
-| TalkNet-ASD | Separate [RaulKite checkout](https://github.com/RaulKite/TalkNet-ASD) and its face-detector / TalkSet weights; default `../TalkNet-ASD`, override with `POLYMNIA_ASD_PATH`. See its [compatibility fixes](https://github.com/RaulKite/TalkNet-ASD/pull/1). |
+| TalkNet-ASD | Checkout at `../TalkNet-ASD` (override with `POLYMNIA_ASD_PATH`). Use [the fork this pipeline runs on](https://github.com/raul-agent/TalkNet-ASD): [upstream](https://github.com/RaulKite/TalkNet-ASD) does not carry the fixes for speaker selection, missing track ids or float `fps`. Its two weights are ignored by Git and must be copied by hand (step 4) |
 | R | `multimolang`, `arrow`, `logger`; local packages in `R_libs/`, configuration in `config_dfMaker.json` |
-| Parole / Praat | [Parole](https://github.com/daedalusLAB/parole) under `create_datasets/parole/`, with its dependencies and Praat configured |
+| Parole / Praat | [Parole](https://github.com/daedalusLAB/parole) under `create_datasets/parole/`, installed with its own `install_parole.sh`, then `bash final_dataset/install_parole_fix.sh` for the prosody scripts in this repo |
+| YOLO pose weights | `modelos/yolo11x-pose.pt`, 118 481 010 bytes, SHA-256 `013c43543b0751b8918486ba96e01ee44a59040683a07f96cc22bcc2cb7785f8`, from [ultralytics assets](https://github.com/ultralytics/assets/releases/tag/v8.3.0). Without it the wrist prescreen cannot run and `doctor` exits 1; `POLYMNIA_YOLO_WEIGHTS` overrides the path |
 | System tools | Bash, `curl`, GNU `timeout`, `ffmpeg`, `ffprobe` and `Rscript` |
-| DuckDB CLI | Executable at `tools/bin/duckdb` for `polymnia duckdb`; Python DuckDB is installed by uv |
+| DuckDB CLI | Executable at `tools/bin/duckdb` for `polymnia duckdb`: the [v1.5.6 CLI release](https://github.com/duckdb/duckdb/releases/tag/v1.5.6), SHA-256 `61238cfbe9dfeaad4bcfcd8a48f6f7123dae2e9603aaadb1f77a4217aeb8980c`. Python DuckDB is installed by uv |
 | Vision endpoint | Optional OpenAI-compatible chat-completions API with image support |
 
 The wrapper sets the Python and R paths and uses the existing uv environment;
