@@ -1,0 +1,6 @@
+# Artefactos de una entrega concreta: se generan, no se versionan.
+diccionarios/                 # DICCIONARIO_<entrega>.{csv,md} por lote
+DATASET_v3.md                 # README generado de una entrega ya publicada
+clips_pendientes.txt          # lista de trabajo de un lote concreto
+__pycache__/
+*.pyc

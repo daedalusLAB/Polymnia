@@ -1,0 +1,102 @@
+diff --git a/install_parole.sh b/install_parole.sh
+index cb2586b..5bcc799 100755
+--- a/install_parole.sh
++++ b/install_parole.sh
+@@ -51,9 +51,9 @@ if [[ ! $(command -v praat) ]]; then
+     # fijar uno, porque el instalador tiene que seguir sirviendo en equipos con 6.x.
+     ARCH=$(uname -m)
+     if [[ "$ARCH" == "x86_64" ]]; then
+-      ARCH_SUFFIXES="x64v3|intel64"
++      ARCH_SUFFIX_LIST="x64v3 intel64"
+     elif [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+-      ARCH_SUFFIXES="arm64"
++      ARCH_SUFFIX_LIST="arm64"
+     else
+       echo "❌ Arquitectura no soportada: $ARCH"
+       exit 1
+@@ -61,26 +61,33 @@ if [[ ! $(command -v praat) ]]; then
+ 
+     # ─────────────────────────────────────────────────────────
+     # Dónde está Praat. Los tarballs ya NO se sirven desde
+-    # https://www.fon.hum.uva.nl/praat/ (devuelven 404 incluso para la versión que
+-    # enlaza la propia página de descargas); ahora viven en las releases de GitHub:
+-    # https://github.com/praat/praat/releases/download/v7.0.02/praat7002_linux-x64v3-barren.tar.gz
++    # https://www.fon.hum.uva.nl/praat/ (404 incluso para la versión que enlaza la
++    # propia página de descargas); ahora viven en las releases de GitHub. Además el
++    # número de fichero no es monótono decodable (6.4.30 -> "6430", 7.0.02 -> "7002"),
++    # así que la antigua semilla + 1 no podía reconstruir la etiqueta `vX.Y.ZZ`, y la
++    # semilla estaba además por encima del último 6.x.
+     #
+-    # Se pregunta a la API de la última release en vez de buscar versión a versión:
+-    # el número `6436` no es monótono decodable (6.4.30 -> "6430", y 7.0.02 -> "7002"),
+-    # así que la antigua semilla + `+1` no puede reconstruir la etiqueta `vX.Y.ZZ`, y
+-    # de hecho la semilla quedó por encima del último 6.x (6.4.30), por lo que la
+-    # búsqueda ascendente no podía acertar nunca.
++    # Por defecto se FIJA la versión, porque los datasets producidos aquí salen de
++    # Praat 6.4.30 y un medidor que cambia en silencio invalida la comparación entre
++    # lotes. La regla del nombre es "quitar la v y los puntos" (v6.4.30 -> 6430), y se
++    # comprueba con una cabecera que el asset existe antes de descargar nada.
+     #
+-    # Para entornos sin salida a api.github.com se puede saltar la descobierta:
+-    #   PRAAT_URL="https://github.com/praat/praat/releases/download/..." bash install_parole.sh
+-    if [[ -z "${PRAAT_URL:-}" ]]; then
++    #   PRAAT_TAG=latest     -> pregunta la última release a la API de GitHub
++    #   PRAAT_TAG=v7.0.02    -> fija otra release concreta
++    #   PRAAT_URL=<url>      -> la usa tal cual (entornos sin salida a api.github.com,
++    #                           que sin token está limitada a 60 peticiones/h por IP)
++    RELEASES_BASE="https://github.com/praat/praat/releases/download"
++    PRAAT_TAG="${PRAAT_TAG:-v6.4.30}"
++    if [[ -n "${PRAAT_URL:-}" ]]; then
++      echo "🔍 Usando la PRAAT_URL indicada a mano…"
++    elif [[ "$PRAAT_TAG" == "latest" ]]; then
+       RELEASES_API="https://api.github.com/repos/praat/praat/releases/latest"
+-      echo "🔍 Consultando la última release de Praat (${ARCH_SUFFIXES})…"
++      echo "🔍 Consultando la última release de Praat (${ARCH_SUFFIX_LIST})…"
+       RELEASE_JSON=$(curl -sSL --max-time 30 -H "Accept: application/vnd.github+json" "$RELEASES_API" 2>/dev/null || true)
+       if [[ -z "$RELEASE_JSON" ]]; then
+         echo "❌ No se pudo consultar $RELEASES_API." >&2
+-        echo "   (red, proxy, o límite de la API de GitHub sin token: 60 peticiones/h por IP)." >&2
+-        echo '   Salida a mano: PRAAT_URL=<url del .tar.gz barren> bash '"$0" >&2
++        echo "   (red, proxy, o límite de la API de GitHub sin token)." >&2
++        echo '   Salida a mano: PRAAT_TAG=v6.4.30 bash '"$0"'   o   PRAAT_URL=<url> bash '"$0" >&2
+         exit 1
+       fi
+       RELEASE_TAG=$(printf '%s\n' "$RELEASE_JSON" \
+@@ -88,9 +95,9 @@ if [[ ! $(command -v praat) ]]; then
+       PRAAT_URL=$(printf '%s\n' "$RELEASE_JSON" \
+         | grep -oE '"browser_download_url":[[:space:]]*"[^"]+"' \
+         | sed -E 's/.*"(https[^"]+)"$/\1/' \
+-        | grep -E "linux-(${ARCH_SUFFIXES})-barren\.tar\.gz$" | head -n 1 || true)
++        | grep -E "linux-(${ARCH_SUFFIX_LIST// /|})-barren\.tar\.gz$" | head -n 1 || true)
+       if [[ -z "$PRAAT_URL" ]]; then
+-        echo "❌ La release ${RELEASE_TAG:-desconocida} no trae un asset barren para $ARCH (sufijos probados: ${ARCH_SUFFIXES//|/, })." >&2
++        echo "❌ La release ${RELEASE_TAG:-desconocida} no trae un asset barren para $ARCH (sufijos probados: ${ARCH_SUFFIX_LIST})." >&2
+         echo "   Assets de Linux en esa release:" >&2
+         printf '%s\n' "$RELEASE_JSON" \
+           | grep -oE 'praat[0-9]+_linux[A-Za-z0-9._-]*\.tar\.gz' | sort -u | sed 's/^/     /' >&2
+@@ -98,7 +105,24 @@ if [[ ! $(command -v praat) ]]; then
+         exit 1
+       fi
+     else
+-      echo "🔍 Usando la PRAAT_URL indicada a mano…"
++      # Version fijada: se construye el nombre y se comprueba que existe, probando los
++      # sufijos de arquitectura en orden (en 7.x x86-64 es x64v3; en 6.x, intel64).
++      PRAAT_NUM=$(printf '%s' "$PRAAT_TAG" | tr -d 'v.')
++      for sufijo in $ARCH_SUFFIX_LIST; do
++        CANDIDATE_URL="${RELEASES_BASE}/${PRAAT_TAG}/praat${PRAAT_NUM}_linux-${sufijo}-barren.tar.gz"
++        if curl --head --silent --fail --location --max-time 30 "$CANDIDATE_URL" > /dev/null; then
++          PRAAT_URL="$CANDIDATE_URL"
++          break
++        fi
++      done
++      if [[ -z "${PRAAT_URL:-}" ]]; then
++        echo "❌ No hay asset barren para $ARCH en la release $PRAAT_TAG (sufijos probados: ${ARCH_SUFFIX_LIST})." >&2
++        echo "   Sufijos disponibles en esa release: https://github.com/praat/praat/releases/tag/${PRAAT_TAG}" >&2
++        echo '   Otras salidas: PRAAT_TAG=latest bash '"$0"'   o   PRAAT_URL=<url> bash '"$0" >&2
++        exit 1
++      fi
++      RELEASE_TAG="$PRAAT_TAG"
++      echo "🔍 Praat fijado en ${PRAAT_TAG} (${ARCH_SUFFIX_LIST})…"
+     fi
+ 
+     PRAAT_FILE=$(basename "$PRAAT_URL")
