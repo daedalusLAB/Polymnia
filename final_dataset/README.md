@@ -67,9 +67,13 @@ next to this directory it assumes Polymnia is a sibling checkout — nothing to 
 
 ## Two things that will bite you
 
-**Keep the same `--offset` for the whole batch.** The delivered clips were cut with
-`--offset 2.5`; `final_dataset.py` defaults to `2.0`. Mixing them silently changes which
-frames exist.
+**Keep the same `--offset` for the whole batch.** It defaults to `2.0` seconds per
+side in the pipeline, in the downloader and in `final_dataset.py`. The value cannot be
+read back from a clip filename — the downloader writes the filename using that same
+padding — so `pipeline_lote.sh` measures it with `ffprobe` (duration minus the tab
+window) and **stops the run** when the measured padding is not what you asked for.
+Lots cut earlier were cut with `2.5` (the 29 delivered clips, and the big OZBEKALL
+download): pass `--offset 2.5` when you rebuild those, or the guard will stop you.
 
 **The wrapper is not optional for GPU stages.** Called bare, TalkNet-ASD cannot find
 `scenedetect` or `python`, produces nothing, and **exits 0**.

@@ -77,7 +77,7 @@ def main():
     )
     parser.add_argument("--txt_file", required=True, help="Tab-delimited input file with clip metadata")
     parser.add_argument("--searchterm", required=True, help="Término de búsqueda para agregar al nombre (alfanumérico o con '_')")
-    parser.add_argument("--offset", type=float, default=2.5, help="Offset a agregar a los tiempos de inicio y fin")
+    parser.add_argument("--offset", type=float, default=2.0, help="Segundos anadidos a cada lado de la ventana del tab (por defecto 2.0). Misma holgura en todo el lote: se puede comprobar despues con tools/verificar_holgura.py")
     parser.add_argument("--output_dir", required=True, help="Directorio de salida para los clips")
     args = parser.parse_args()
 

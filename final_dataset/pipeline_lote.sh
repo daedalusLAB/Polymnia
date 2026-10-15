@@ -45,7 +45,7 @@ FDLOG="$POLY_ROOT/failed_downloads.log"    # download_clips lo escribe en el cwd
 FILTROS="$POLY_ROOT/tools"
 [ -f "$FILTROS/wrist_prescreen.py" ] || FILTROS="$RAIZ/final_dataset"
 
-TSV=""; LOTE=""; OFFSET=2.5; SEARCHTERM="beginning_to_end"
+TSV=""; LOTE=""; OFFSET=2.0; SEARCHTERM="beginning_to_end"
 MIN_SP_BOTH=0.8; conf=0.7; FRAMES=15; DEVICE=0
 # Los pesos no van en el repo. Manda la variable; si no, se aceptan los dos sitios donde
 # han estado siempre (dentro del repo y al lado del checkout, como TalkNet-ASD).
@@ -71,7 +71,7 @@ uso() {
 Opciones:
   --tsv F            (obligatorio) tab de NewsScape, sin cabecera, >=6 campos por línea
   --lote NOMBRE      carpeta de trabajo (por defecto: lote_AAAAMMDD_HHMM)
-  --offset N         holgura por lado, misma en TODO el pipeline (defecto 2.5)
+  --offset N         holgura por lado, misma en TODO el pipeline (defecto 2.0)
   --searchterm T     término del nombre de fichero (defecto beginning_to_end)
   --min-sp-both F    umbral de admisión de la criba de muñecas (defecto 0.8)
   --yolo-conf F      confianza de keypoint COCO del pre-filtro (defecto 0.7, calibrado)
@@ -197,6 +197,29 @@ tsv_filtrado() {                       # el TSV efectivo, con --limit aplicado
   if [ -n "$LIMIT" ]; then head -n "$LIMIT" "$TSV"; else cat "$TSV"; fi
 }
 
+verificar_holgura() {                  # mide en la duracion del clip con que holgura se corto
+  # La holgura no se puede deducir del nombre del fichero (lo escribe el propio
+  # descargador con esa holgura). Se mide con ffprobe: duracion - ventana del TSV.
+  # Se llama tambien en la etapa 1 para que un reanudado con --desde asd no se cuele
+  # con clips cortados a otra holgura que la de esta pasada.
+  [ -f "$OUT/tsv/efectivo.tsv" ] || return 0
+  [ -d "$OUT/videos/raw" ] || return 0
+  if [ -n "$(find "$OUT/videos/raw" -name '*.mp4' -print -quit 2>/dev/null)" ]; then
+    corre "$OUT/logs/holgura.log" "$POLY" verificar-holgura \
+          --videos "$OUT/videos/raw" --tab "$OUT/tsv/efectivo.tsv" \
+          --offset "$OFFSET" --searchterm "$SEARCHTERM" && return 0
+    # aqui no vale el balcon de abortar: reanudar no arregla un corte equivocado,
+    # los clips ya estan en disco cortados como estan
+    echo >&2
+    echo "❌ los clips de $OUT/videos/raw no estan cortados a $OFFSET s por lado" >&2
+    echo "   arriba esta la holgura medida. Elige y repite:" >&2
+    echo "   a) construir con la holgura real: --offset <esa medida>  (no vuelve a bajar nada)" >&2
+    echo "   b) recortar de verdad: vacia videos/raw y repite con el offset que quieras" >&2
+    echo "   (un --desde no arregla esto; ver logs/holgura.log)" >&2
+    exit 1
+  fi
+}
+
 echo "lote:            $OUT"
 echo "tsv:             $TSV"
 echo "offset:          $OFFSET   searchterm: $SEARCHTERM"
@@ -238,6 +261,7 @@ if malas[:5]:
     print(f"   ⚠️  líneas con pocos campos: {malas[:5]}")
 PY
   conteo tsv lineas_tsv "$NLINES"
+  verificar_holgura
   coste "tabulado"
 fi
 
@@ -283,6 +307,7 @@ PY
   conteo descarga clips_descargados "$RAW"
   coste "descarga"
   [ "$RAW" -gt 0 ] || abortar "no bajó ni un clip: mira logs/02_download.log e informes/failed_downloads_nuevos.log" descarga
+  verificar_holgura
 fi
 
 # ============================================================ 3. TalkNet-ASD
