@@ -228,6 +228,16 @@ echo "gate visibilidad: $([ "$GATE" -eq 1 ] && echo "ON ($MIN_VISIBLE%)" || echo
 echo "bloque extendido: $([ "$EXTENDED" -eq 1 ] && echo "sí (FEATURE_VERSION 3)" || echo "no (v2)")"
 echo "etapas:          ${ORDEN[*]:I_DESDE:I_HASTA-I_DESDE+1}"
 
+# ------------------------------------------------- tool provenance (issue #14)
+# Written once at run start, outside the stage list: a resumed run still has to say which
+# tools it used. It goes through the wrapper because Praat and scenedetect only appear on
+# the PATH the wrapper builds. Failing here is reported and never fatal: not knowing the
+# versions is bad, aborting a six-hour lot over a version string is worse.
+PROCEDENCIA="$OUT/informes/procedencia.json"
+corre "$OUT/logs/00_procedencia.log" "$POLY" python "$POLY_ROOT/tools/tool_provenance.py" \
+      --out "$PROCEDENCIA" --weights "$PESO" --root "$POLY_ROOT" --gpu \
+  || echo "   ⚠️  provenance could not be written: the delivery will record that it is missing"
+
 # ============================================================ 1. el TSV
 if hacer tsv; then
   etapa "1/10  validar el tabulado"
@@ -568,7 +578,7 @@ if hacer final; then
   [ -e "$OUT/final" ] && [ "$FORCE" -eq 0 ] && abortar "ya existe $OUT/final (bórralo o usa --force)" final
   [ -e "$OUT/final" ] && apartar "$OUT/final"
   ARGS=(--db_name "$OUT/${LOTE_NOMBRE}.duckdb" --tab "$OUT/tsv/efectivo.tsv"
-        --offset "$OFFSET" --searchterm "$SEARCHTERM")
+        --offset "$OFFSET" --searchterm "$SEARCHTERM" --provenance "$PROCEDENCIA")
   [ "$EXTENDED" -eq 1 ] && ARGS+=(--extended)
 
   # El README se publica DENTRO de final/ y entra en el sha256 del manifiesto, asi que tiene que

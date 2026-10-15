@@ -93,6 +93,12 @@ not abort downloads. `verify_videos.py` checks the resulting media independently
 `verificar-holgura` is the one that *does* stop: it compares each clip's measured
 duration with the tab window plus the requested padding, and exits 1 on a mismatch.
 
+Capture provenance at the start, while the environment is still the one doing the work:
+`tools/tool_provenance.py` writes which Praat, R, OpenPose build, YOLO weights and repo
+commits are in play (`code`, `binaries`, `weights`, `python`, `services`). It records `null`
+with a reason for anything it cannot identify and never reads the Theia API key.
+`final_dataset.py --provenance` embeds that file in `manifest.json`.
+
 ## Run the workflow
 
 Run from the repository root with **absolute paths**. Paths and clip filenames
@@ -104,6 +110,7 @@ set -euo pipefail
 TAB="/absolute/path/clips.txt"
 OUT="$PWD/output"
 mkdir -p "$OUT"
+./bin/polymnia python tools/tool_provenance.py --out "$OUT/informes/procedencia.json" --gpu
 ./bin/polymnia check-tab "$TAB" --offset 2.0
 ./bin/polymnia download --txt_file "$TAB" --searchterm climate \
   --offset 2.0 --output_dir "$OUT/videos/raw"
