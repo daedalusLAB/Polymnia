@@ -81,12 +81,17 @@ The downloader reads a **headerless, tab-separated file** with at least six fiel
 
 Extra fields are ignored by the downloader. The fractional divisor is **1000 when
 the normalized filename starts with `2017`, otherwise 100**. This is the literal
-current rule, not a general guarantee for later years. The standalone downloader's
-padding default is 2.5 seconds on each side; the workflow below specifies it explicitly.
+current rule, not a general guarantee for later years. Padding (`--offset`) defaults
+to **2 seconds on each side** in both the standalone downloader and the batch
+pipeline, and one value has to be used for the whole batch: it cannot be recovered
+later from the clip filename, because the downloader writes the filename with the
+padding it used. `verificar-holgura` measures it instead, from the media duration.
 
 Run `check-tab` first: it checks parsing, reversed intervals and agreement with
 ranges embedded in filenames. The download wrapper also checks, but warnings do
 not abort downloads. `verify_videos.py` checks the resulting media independently.
+`verificar-holgura` is the one that *does* stop: it compares each clip's measured
+duration with the tab window plus the requested padding, and exits 1 on a mismatch.
 
 ## Run the workflow
 
@@ -99,9 +104,11 @@ set -euo pipefail
 TAB="/absolute/path/clips.txt"
 OUT="$PWD/output"
 mkdir -p "$OUT"
-./bin/polymnia check-tab "$TAB" --offset 2.5
+./bin/polymnia check-tab "$TAB" --offset 2.0
 ./bin/polymnia download --txt_file "$TAB" --searchterm climate \
-  --offset 2.5 --output_dir "$OUT/videos/raw"
+  --offset 2.0 --output_dir "$OUT/videos/raw"
+./bin/polymnia verificar-holgura --videos "$OUT/videos/raw" --tab "$TAB" \
+  --offset 2.0 --searchterm climate
 ./bin/polymnia python tools/verify_videos.py "$OUT/videos/raw"
 ./bin/polymnia asd --input_dir "$OUT/videos/raw" --output_dir "$OUT/videos/masked"
 ./bin/polymnia filter --videos_folder "$OUT/videos/masked" \

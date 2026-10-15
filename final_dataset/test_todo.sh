@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Las pruebas de este directorio.
 #
-# `polymnia test` recorre tools/test_*.py; estas dos no van ahí porque hablan del contrato
-# de la ENTREGA (qué columnas salen, qué significa un NULL), no de un tool suelto.
+# `polymnia test` recorre tools/test_*.py; estas no van ahí porque hablan del contrato
+# de la ENTREGA (qué columnas salen, qué significa un NULL, qué holgura es válida), no de un
+# tool suelto.
 set -uo pipefail
 
 AQUI="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
@@ -20,6 +21,7 @@ corre() { echo; echo "── ${*/$AQUI\//}"; "$@" || { echo "   ❌ falla"; fall
 
 corre bash -n "$AQUI/pipeline_lote.sh"
 corre "$PY" "$AQUI/test_final_dataset_voz.py"
+corre "$PY" "$AQUI/test_guardia_holgura.py"
 
 # El diccionario lee el bloque extendido de gesture_features.py. Si tu Polymnia no lo tiene
 # todavia, la prueba no puede correr: se anuncia y se omite, no se cuela como fallo (una

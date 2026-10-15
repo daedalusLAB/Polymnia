@@ -11,7 +11,7 @@ Variables que usamos todo el rato:
 cd "$TRABAJO"                        # p. ej. ~/proyectos/trendsI
 TSV=mi_tsv.txt                 # tu TSV, sin cabecera
 LOTE=lote3                     # carpeta de trabajo de esta tanda
-OFFSET=2.5                     # holgura por lado; DEBE ser la misma en todo el pipeline
+OFFSET=2.0                     # holgura por lado; DEBE ser la misma en todo el pipeline
 POLY=Polymnia/bin/polymnia     # wrapper: pone el venv, R, Praat y scenedetect en el PATH
 PY=Polymnia/.venv/bin/python
 ```
@@ -57,7 +57,7 @@ Los flags que importan (el resto, `--help`):
 | flag | para qué |
 |---|---|
 | `--limit N` | solo las N primeras líneas del TSV: la prueba barata |
-| `--offset N` | holgura por lado, **la misma en todo el pipeline**. Defecto 2.5, que es la que hace coincidir los IDs con los clips ya entregados; el constructor suelto usa 2.0 |
+| `--offset N` | holgura por lado, **la misma en todo el pipeline**. Defecto **2.0**, el mismo que usa el constructor suelto `final_dataset.py`. Lotes ya cortados con otra (los 29 clips entregados y OZBEKALL se bajaron con **2.5**) exigen que lo pases explícito: la etapa 1 y la 2 lo miden con `ffprobe` y cortan el run si no coincide |
 | `--desde` / `--hasta ETAPA` | reanudar o cortar. Etapas: `tsv descarga asd preseleccion openpose limpieza voz merge theia final` |
 | `--force` | reutilizar la carpeta del lote. Lo que se sustituye se **aparta** a `informes/_anterior/<hora>/`, no se borra |
 | `--min-sp-both` / `--yolo-conf` / `--frames` | umbrales de la criba de muñecas (0.8 / 0.7 / 15, calibrados contra OpenPose) |
@@ -333,9 +333,11 @@ Qué hace y por qué falla:
 
 * Abre el DuckDB en **solo lectura** y **se niega** si `--output_folder` ya existe. No borres
   carpetas de entregas anteriores para "que pase": publica en una nueva.
-* `--offset` es **2.0 por defecto**. Tus clips se descargaron con `--offset 2.5`, así que sin
-  este flag no encaja ni un ID por coincidencia exacta. Comprueba en el manifiesto:
-  `clip_id_mapping.matched_exact_id` debe ser igual al número de clips.
+* `--offset` es **2.0 por defecto**, el mismo del pipeline. En lotes descargados con otra
+  holgura (los 29 clips entregados y OZBEKALL se cortaron con **2.5**) sin este flag no
+  encaja ni un ID por coincidencia exacta. Comprueba en el manifiesto:
+  `clip_id_mapping.matched_exact_id` debe ser igual al número de clips, y
+  `processed_padding_s` debe valer `[2.0]` (o el valor que pasaras).
 * `--extended` añade el bloque FEATURE_VERSION 3 (134 columnas de secuencia + 6 de frame).
   Sin la bandera, la salida es la versión 2.
 * La matemática de muñeca se importa de `Polymnia/gesture_features.py`; no la dupliques.

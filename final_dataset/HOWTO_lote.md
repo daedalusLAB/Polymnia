@@ -58,7 +58,7 @@ anotación visual y se recupera en 1 minuto (`--desde theia --force`).
 
 ```bash
 TSV=mi_tsv.txt
-Polymnia/bin/polymnia check-tab $TSV --offset 2.5 --show 6
+Polymnia/bin/polymnia check-tab $TSV --offset 2.0 --show 6
 ```
 
 Qué tienes que querer ver:
@@ -149,7 +149,8 @@ Señales de que algo va mal, y qué significa:
 
 | ves | qué es |
 |---|---|
-| `emparejados` < `lineas del tab`, o `processed_padding_s` ≠ `[2.5]` | el `--offset` de esta pasada no coincide con la descarga. Vuelve a bajar con el mismo offset |
+| `emparejados` < `lineas del tab`, o `processed_padding_s` ≠ `[2.0]` | el `--offset` de esta pasada no coincide con la descarga. Vuelve a bajar con el mismo offset, o construye con el offset que consta en el manifiesto |
+| el pipeline corta en la etapa 1 o 2 con *«no están cortados a N s por lado»* | los clips que ya había en `videos/raw` se bajaron con otra holgura que la de esta pasada. Lo dice `logs/holgura.log`, con la holgura medida: construye con `--offset <medida>` o vacía `videos/raw` y vuelve a bajar. Reanudar con `--desde` no lo arregla: los clips ya están cortados |
 | `Parquet en 1_persons: 0` | la etapa 6 no salvó ningún clip: `informes/limpieza_fantasmas.json` dice por qué se fue cada candidato |
 | `clips en la base: N` menor que los Parquet | el DuckDB no tragó todo; mira `logs/08_merge.log` (el paso `hefesto` deja exit 0 aunque fallen inserts) |
 | `anotación visual: 0 clips con etiquetas, N con error` | el `error` del log dice por qué. Un `401` **con la clave ya exportada** sí es credencial o endpoint; arreglado eso, `--desde theia --force` anota solo los que faltan |

@@ -2,7 +2,7 @@
 """Dataset FINAL: tab de NewsScape + DuckDB procesado -> 2 tablas (parquet + CSV).
 
     python3 final_dataset.py --db_name ../entrega_1p/1p.duckdb \
-        --tab clips.txt --output_folder ../entrega_1p_final --offset 2.5
+        --tab clips.txt --output_folder ../entrega_1p_final --offset 2.0
 
 Con `--extended` la tabla de vídeos añade el bloque de FEATURES_VERSION 3 (jerk,
 agregados de distribución, forma, dirección y bimanuales). Es opt-in: sin la
@@ -226,6 +226,33 @@ def match_tab_to_clips(tab, clip_ids, searchterm):
     return pd.DataFrame(matched), pd.DataFrame(unmatched)
 
 
+def guarda_holgura(matched, offset, permite=False):
+    """Se niega a publicar si los clips procesados estan cortados con otra holgura.
+
+    `processed_padding_s` esta medida de verdad solo en los emparejamientos por centro de
+    ventana: los de id exacto llevan, por construccion, la holgura pedida (el id se forma
+    restando y sumando esa holgura), asi que ahi comparar no daria nunca discrepancia. Que
+    aparezca un valor distinto significa que el tab de esta pasada no es el que se descargo:
+    los fotogramas existen, pero desplazados `diferencia` segundos respecto a lo que se pide,
+    y publicar la mezcla es peor que parar. La duracion del clip lo comprueba aparte, con
+    ffprobe, en tools/verificar_holgura.py.
+    """
+    medidas = sorted({round(float(p), 3) for p in matched["processed_padding_s"]})
+    torcidas = [p for p in medidas if abs(p - float(offset)) > 0.001]
+    if not torcidas:
+        return
+    if permite:
+        print(f"aviso: {torcidas} s por lado no es la holgura pedida ({offset} s). "
+              f"Publicas con --allow-padding-mismatch, a tu cuenta.")
+        return
+    raise FinalDatasetError(
+        f"los clips procesados estan cortados a {torcidas} s por lado y tu pides {offset} s. "
+        "Encajan con el tab por centro de ventana, no por id exacto, asi que los fotogramas "
+        "estan desplazados respecto a lo que pides. Reconstruye con "
+        f"--offset {torcidas[0]:g} (no vuelve a bajar nada) o vuelve a descargar con la "
+        "holgura que quieras. --allow-padding-mismatch lo publica igualmente, a tu cuenta.")
+
+
 # -------------------------------------------------------------------- fuente ----
 
 def open_read_only(db_path, table):
@@ -357,7 +384,8 @@ ADMISSION_RULES = (
 
 def build(db_path, tab_path, output_folder, offset, searchterm, polymnia_root,
           table="multi_data", min_keypoint_confidence=0.2, max_gap_frames=3,
-          window_size=7, poly_order=2, extended=False, readme=None):
+          window_size=7, poly_order=2, extended=False, readme=None,
+          allow_padding_mismatch=False):
     """Construye las dos tablas y las publica de forma atómica en `output_folder`."""
     if os.path.exists(output_folder):
         raise FinalDatasetError(f"la carpeta de salida ya existe: {output_folder} "
@@ -386,6 +414,7 @@ def build(db_path, tab_path, output_folder, offset, searchterm, polymnia_root,
                 "ningun clip de este tab esta procesado en esa base de datos, asi que no hay nada que "
                 "publicar. Falta la parte del pipeline: download -> asd -> filter -> argos -> voice -> "
                 "merge -> theia. Un tab solo aporta que clips pedir, no fotogramas ni keypoints.")
+        guarda_holgura(matched, offset, permite=allow_padding_mismatch)
         keep = set(matched["id"])
         frame_meta, prosody, clip_meta, provenance_note = load_frame_metadata(con, table)
         annotations, annotation_fields, annotation_note = load_annotations(con)
@@ -557,6 +586,10 @@ def build_parser():
                              "es identica a la version 2")
     parser.add_argument("--readme", default=None,
                         help="markdown a publicar dentro de la carpeta (se hashea en el manifiesto)")
+    parser.add_argument("--allow-padding-mismatch", dest="allow_padding_mismatch", action="store_true",
+                        help="publicar aunque la holgura real de los clips procesados no sea la de "
+                             "--offset. Sin esta bandera se niega: los clips encajan por centro de "
+                             "ventana, no por id, y publicar con holguras mezcladas desplaza las medidas")
     return parser
 
 
@@ -568,7 +601,8 @@ def main(argv=None):
                          os.path.abspath(args.polymnia_root), args.table_name,
                          args.min_keypoint_confidence, args.max_gap_frames,
                          args.window_size, args.poly_order, extended=args.extended,
-                         readme=os.path.abspath(args.readme) if args.readme else None)
+                         readme=os.path.abspath(args.readme) if args.readme else None,
+                         allow_padding_mismatch=args.allow_padding_mismatch)
     except (FinalDatasetError, ValueError) as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 1

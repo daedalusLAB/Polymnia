@@ -49,6 +49,8 @@ Ejecuta etapas dentro del entorno uv del repo. No hay que activar venvs.
   polymnia download  --txt_file F --searchterm T [--output_dir D] [--offset N]
                                      [--no-check]         # saltar la criba del tabulado
   polymnia check-tab F [--offset N] [--show N]  # validar tabulado sin descargar
+  polymnia verificar-holgura --videos D --tab F [--offset N] [--searchterm T]
+                                     # medir con que holgura estan cortados los clips bajados
   polymnia filter    --videos_folder D --matched_videos D --discarded_videos D [--check_hands True]
   polymnia argos     --videos_folder D --output_folder D [--openpose_path P] [--face_hands True] [--skeletons True]
   polymnia parquet   --json_folder D --dataset_dir D      # solo max_people_classification.R
@@ -141,6 +143,8 @@ case "$cmd" in
     ;;
 
   check-tab) uvrun python tools/check_tab.py "$@" ;;
+
+  verificar-holgura) uvrun python tools/verificar_holgura.py "$@" ;;
 
   asd)
     # TalkNet-ASD: videos/raw -> videos/masked (deja solo al hablante activo)
