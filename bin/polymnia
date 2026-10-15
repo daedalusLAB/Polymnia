@@ -244,6 +244,17 @@ case "$cmd" in
     uvrun python "${REPO_ROOT}/theia.py" "${args[@]}" $extra ;;
   rscript)  Rscript "$@" ;;
   test)     rc=0
+            # A missing or empty environment is not a code failure, but running the suite
+            # anyway is worse than not running it: `uv run --no-sync` falls back to the
+            # ambient python - and even creates an empty .venv on the way - so 9 of the 14
+            # files die on `import numpy` and the output reads like a broken repository.
+            # Ask the question the tests would ask, once, and name the answer. (#16)
+            if ! entorno=$(uvrun python -c 'import numpy, pandas, duckdb, cv2' 2>&1); then
+              echo "❌ the tests cannot run here: no python with the project dependencies" >&2
+              printf '   %s\n' "$(printf '%s\n' "$entorno" | tail -1)" >&2
+              echo "   build it once:  cd ${REPO_ROOT} && uv sync" >&2
+              exit 2
+            fi
             for t in "${REPO_ROOT}"/tools/test_*.py; do
               [ -e "$t" ] || continue
               echo "── $(basename "$t")"
