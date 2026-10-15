@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 import os
+import sys
 from typing import Dict, List, Any
 import pandas as pd
 import pyarrow.parquet as pq
@@ -186,6 +187,13 @@ def main() -> None:
         print("Files with issues:")
         for f in discrepancy_files:
             print(f)
+    # Cada discrepancia son filas de un clip que nunca llegaron a multi_data. Si esto
+    # termina en 0, quien llama (create_dataset.py, un script de lote) sigue hacia las
+    # etapas de pose y gestos con una base a la que le faltan clips, y lo publica igual.
+    # Una carpeta de parquets que no existe NO entra aqui: un bucket <n>_persons vacio
+    # es un resultado normal al recorrer las clasificaciones.
+    if discrepancy_count:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
