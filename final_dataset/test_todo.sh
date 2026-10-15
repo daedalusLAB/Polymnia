@@ -20,6 +20,7 @@ fallos=0
 corre() { echo; echo "── ${*/$AQUI\//}"; "$@" || { echo "   ❌ falla"; fallos=$((fallos + 1)); }; }
 
 corre bash -n "$AQUI/pipeline_lote.sh"
+corre bash "$AQUI/test_install_parole_fix.sh"
 corre "$PY" "$AQUI/test_final_dataset_voz.py"
 corre "$PY" "$AQUI/test_guardia_holgura.py"
 corre "$PY" "$AQUI/test_provenance_manifest.py"
