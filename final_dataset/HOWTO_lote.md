@@ -16,8 +16,8 @@ sustituye se aparta a `informes/_anterior/<hora>/` en vez de borrarse.
 cd "$TRABAJO"                        # p. ej. ~/proyectos/trendsI
 
 Polymnia/bin/polymnia doctor          # GPU, OpenPose, TalkNet-ASD, WhisperX, Praat, R
+                                      #   + bloque «entrega»: pesos de la criba y .env de Theia
 final_dataset/install_parole_fix.sh --comprobar   # la prosodia arreglada sigue instalada
-ls -l modelos/yolo11x-pose.pt         # pesos de la criba (si falta, --peso otra_ruta)
 nvidia-smi --query-gpu=memory.used --format=csv   # que esté libre el device 0
 curl -s -o /dev/null -w "%{http_code}\n" \
   "https://gallo.case.edu/cgi-bin/snippets/newsscape_mp4_snippet.cgi?file=x&start=0&end=1"

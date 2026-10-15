@@ -47,7 +47,17 @@ FILTROS="$POLY_ROOT/tools"
 
 TSV=""; LOTE=""; OFFSET=2.5; SEARCHTERM="beginning_to_end"
 MIN_SP_BOTH=0.8; conf=0.7; FRAMES=15; DEVICE=0
-PESO="${POLYMNIA_YOLO_WEIGHTS:-$RAIZ/modelos/yolo11x-pose.pt}"
+# Los pesos no van en el repo. Manda la variable; si no, se aceptan los dos sitios donde
+# han estado siempre (dentro del repo y al lado del checkout, como TalkNet-ASD).
+# tools/preflight_entrega.sh usa la misma lista: si cambias uno, cambia el otro.
+PESO="${POLYMNIA_YOLO_WEIGHTS:-}"
+if [ -z "$PESO" ]; then
+  for candidato in "$RAIZ/modelos/yolo11x-pose.pt" "$(cd "$RAIZ/.." 2>/dev/null && pwd -P)/modelos/yolo11x-pose.pt"; do
+    if [ -f "$candidato" ]; then PESO="$candidato"; break; fi
+  done
+  # sin ninguno, se guarda la ruta propia del repo: es la que sale en el mensaje de error
+  PESO="${PESO:-$RAIZ/modelos/yolo11x-pose.pt}"
+fi
 LIMIT=""; GATE=0; MIN_VISIBLE=80; EXTENDED=1; README=""; SKIP_THEIA=0
 LIMPIEZA=1; CRITERIO_LIMPIEZA=todo; DICCIONARIO=1
 DESDE=tsv; HASTA=final; FORCE=0
