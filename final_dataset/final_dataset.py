@@ -382,10 +382,69 @@ ADMISSION_RULES = (
 )
 
 
+def build_provenance(path, polymnia_root):
+    """What produced these numbers, as far as that can be known afterwards (#14).
+
+    `path` is the JSON that `pipeline_lote.sh` writes in stage 0 with
+    `tools/tool_provenance.py`. Embedding that file, instead of re-probing here, is the
+    whole point: a 5000-clip lot runs for hours and a delivery built at the end would
+    otherwise describe whatever is installed at report time. `delivery_code` is measured
+    now, at build time, because the wrist math lives in this repo and a silently patched
+    tree is not the commit it points at.
+
+    Nothing here fails the delivery. A missing or unreadable file is recorded as a reason,
+    so the manifest says "we do not know" instead of looking complete.
+    """
+    block = {"captured_from": os.path.abspath(path) if path else None,
+             "captured_at": None, "tools": None, "delivery_code": None, "reason": None}
+    if not path:
+        block["reason"] = ("no --provenance file was given: this delivery records no tool versions. "
+                           "pipeline_lote.sh writes informes/procedencia.json in stage 0")
+        return block
+    if not os.path.isfile(path):
+        block["reason"] = f"--provenance file not found: {path}"
+        return block
+    try:
+        with open(path, encoding="utf-8") as handle:
+            tools = json.load(handle)
+    except (OSError, ValueError) as exc:
+        block["reason"] = f"--provenance file could not be read ({type(exc).__name__}): {exc}"
+        return block
+    if not isinstance(tools, dict):
+        block["reason"] = f"--provenance file is not a JSON object: {path}"
+        return block
+    block["tools"] = tools
+    block["captured_at"] = tools.get("recorded_at")
+    return block
+
+
+def delivery_code(polymnia_root):
+    """Commit and dirty flag of the repo holding the wrist maths, measured at build time.
+
+    The probe is loaded from the given repo by path, not imported by name: a caller that
+    points at another checkout must get that checkout's identity, not whatever copy happens
+    to be in sys.modules already.
+    """
+    import importlib.util
+
+    probe = os.path.join(polymnia_root, "tools", "tool_provenance.py")
+    if not os.path.isfile(probe):
+        return {"polymnia": {"commit": None, "dirty": None,
+                             "reason": f"tools/tool_provenance.py unavailable under {polymnia_root}"}}
+    try:
+        spec = importlib.util.spec_from_file_location("polymnia_tool_provenance", probe)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as exc:  # noqa: BLE001 - provenance never breaks a delivery
+        return {"polymnia": {"commit": None, "dirty": None,
+                             "reason": f"tools/tool_provenance.py unavailable: {type(exc).__name__}: {exc}"}}
+    return {"polymnia": module.git_identity(polymnia_root)}
+
+
 def build(db_path, tab_path, output_folder, offset, searchterm, polymnia_root,
           table="multi_data", min_keypoint_confidence=0.2, max_gap_frames=3,
           window_size=7, poly_order=2, extended=False, readme=None,
-          allow_padding_mismatch=False):
+          allow_padding_mismatch=False, provenance_path=None):
     """Construye las dos tablas y las publica de forma atómica en `output_folder`."""
     if os.path.exists(output_folder):
         raise FinalDatasetError(f"la carpeta de salida ya existe: {output_folder} "
@@ -403,6 +462,9 @@ def build(db_path, tab_path, output_folder, offset, searchterm, polymnia_root,
     except ImportError as exc:
         raise FinalDatasetError(f"no se pueden importar los modulos de Polymnia desde "
                                 f"{polymnia_root}: {exc}") from None
+
+    provenance = build_provenance(provenance_path, polymnia_root)
+    provenance["delivery_code"] = delivery_code(polymnia_root)
 
     tab = read_tab(tab_path, offset, searchterm)
     con = open_read_only(db_path, table)
@@ -531,6 +593,7 @@ def build(db_path, tab_path, output_folder, offset, searchterm, polymnia_root,
             "null_policy": ("NULL = no medido (keypoint ausente, confianza baja, pocos samples "
                             "conectados o fotograma sin reloj). NULL no es cero ni ausencia de gesto."),
             "platform": {"python": sys.version.split()[0], "os": platform.platform()},
+            "provenance": provenance,
         }
         manifest_path = os.path.join(staging, MANIFEST)
         if readme:
@@ -590,6 +653,11 @@ def build_parser():
                         help="publicar aunque la holgura real de los clips procesados no sea la de "
                              "--offset. Sin esta bandera se niega: los clips encajan por centro de "
                              "ventana, no por id, y publicar con holguras mezcladas desplaza las medidas")
+    parser.add_argument("--provenance", default=None,
+                        help="JSON written by tools/tool_provenance.py at run start (pipeline_lote.sh "
+                             "stage 0: informes/procedencia.json). It is embedded in manifest.json so "
+                             "the delivery says which Praat, OpenPose, R and weights produced it. "
+                             "Without it the delivery records that no tool versions were captured")
     return parser
 
 
@@ -602,7 +670,8 @@ def main(argv=None):
                          args.min_keypoint_confidence, args.max_gap_frames,
                          args.window_size, args.poly_order, extended=args.extended,
                          readme=os.path.abspath(args.readme) if args.readme else None,
-                         allow_padding_mismatch=args.allow_padding_mismatch)
+                         allow_padding_mismatch=args.allow_padding_mismatch,
+                         provenance_path=args.provenance)
     except (FinalDatasetError, ValueError) as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 1
@@ -614,6 +683,12 @@ def main(argv=None):
     print(f"   features: version {manifest['features']['version']}"
           f" ({'extendidas' if manifest['features']['extended'] else 'base'}) | "
           f"umbral de movimiento {manifest['features']['movement_speed_units_per_s']} u/s")
+    provenance = manifest.get("provenance") or {}
+    if provenance.get("reason"):
+        print(f"   ⚠️  provenance: {provenance['reason']}")
+    else:
+        print(f"   provenance: {provenance['captured_from']} captured at {provenance['captured_at']} "
+              f"(embedded in manifest.json)")
     print(f"   tab: {mapping['tab_rows']} lineas -> {mapping['matched']} clips procesados "
           f"({mapping['matched_exact_id']} por id exacto, "
           f"{mapping['matched_by_window_center']} por centro de ventana), "

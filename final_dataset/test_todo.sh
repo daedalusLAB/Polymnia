@@ -22,6 +22,7 @@ corre() { echo; echo "── ${*/$AQUI\//}"; "$@" || { echo "   ❌ falla"; fall
 corre bash -n "$AQUI/pipeline_lote.sh"
 corre "$PY" "$AQUI/test_final_dataset_voz.py"
 corre "$PY" "$AQUI/test_guardia_holgura.py"
+corre "$PY" "$AQUI/test_provenance_manifest.py"
 
 # El diccionario lee el bloque extendido de gesture_features.py. Si tu Polymnia no lo tiene
 # todavia, la prueba no puede correr: se anuncia y se omite, no se cuela como fallo (una

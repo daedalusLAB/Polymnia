@@ -85,9 +85,12 @@ final_dataset/test_todo.sh
 ```
 
 which runs `test_diccionario_columnas.py` (dictionary columns match the tables, formulas and
-units present, no set-dependent score) and `test_final_dataset_voz.py` (voice columns:
-contiguous spans, `NULL` outside a track, no `0` standing in for silence). `polymnia test`
-globs `tools/test_*.py` only, so these two are not in that loop.
+units present, no set-dependent score), `test_final_dataset_voz.py` (voice columns:
+contiguous spans, `NULL` outside a track, no `0` standing in for silence),
+`test_guardia_holgura.py` (a tab and clips cut with different padding refuse to be published)
+and `test_provenance_manifest.py` (the manifest names the tools that produced it, or says it
+does not know). `polymnia test`
+globs `tools/test_*.py` only, so these are not in that loop.
 
 `test_diccionario_columnas.py` resolves the `EXTENDED_*` families out of
 `gesture_features.py`, so on a checkout that predates the version-3 block it prints `[skip]`
@@ -99,6 +102,16 @@ and that is a missing piece, not a broken delivery.
 Every delivery records the TSV's SHA-256, the offsets used, per-column counters for how many
 values were `NULL` and why, and the hashes of the inputs it read. `NULL` means "not
 measurable", never `0`, and nothing is extrapolated off the end of a track — including voice.
+
+`manifest.json` carries a `provenance` block: the JSON that `pipeline_lote.sh` writes in
+stage 0 (`informes/procedencia.json`, produced by `tools/tool_provenance.py`) embedded
+verbatim, plus the commit and dirty flag of the Polymnia tree that computed the features.
+Embedded rather than re-probed at build time, deliberately: a lot runs for hours, and a
+delivery has to describe the environment that did the work, not whatever got upgraded while
+it ran. A tool that cannot be identified is written as `null` with a `reason`: an `.pt`
+weight has no version to quote so it gets size plus SHA-256, and this OpenPose build answers
+`-version` with its own filename, so its identity is the binary's hash. With no provenance
+file the manifest records that gap instead of looking complete.
 
 Voice in the data delivered so far was produced with **Praat 6.4.30** (the version
 `install_parole.sh` had pinned before it moved to releases); the `To Pitch` settings are
