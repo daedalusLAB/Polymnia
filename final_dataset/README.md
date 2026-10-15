@@ -52,9 +52,13 @@ published delivery, so the byte-identical regression can be re-run) and
 
 ```bash
 Polymnia/bin/polymnia doctor                       # GPU, OpenPose, TalkNet-ASD, WhisperX, Praat, R
+                                                   #   + pesos YOLO y .env de Theia (bloque «entrega»)
 final_dataset/install_parole_fix.sh --comprobar    # the prosody fix is still in your PAROLE clone
-ls -l modelos/yolo11x-pose.pt                      # prescreen weights (--peso for another path)
 ```
+
+`doctor` looks for the prescreen weights in `modelos/` inside this repo and next to the
+checkout, the same two places `pipeline_lote.sh` uses; `POLYMNIA_YOLO_WEIGHTS` (or `--peso`)
+overrides both. It never prints the values of your Theia keys, only whether they are set.
 
 Needs: the Polymnia env (through `bin/polymnia`, which puts the venv, R, Praat and
 `scenedetect` on `PATH`), a PAROLE clone at `create_datasets/parole` (`install_parole.sh`

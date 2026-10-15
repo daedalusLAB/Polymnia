@@ -132,6 +132,12 @@ case "$cmd" in
     command -v curl   >/dev/null && echo "    ✅ curl"   || echo "    ❌ curl"
     echo "🧩 parole (prosodia)"
     [ -x "${PAROLE_DIR}/scripts/parole.sh" ] && echo "    ✅ ${PAROLE_DIR}/scripts/parole.sh" || echo "    ❌ parole.sh"
+    echo "🚦 entrega (final_dataset/pipeline_lote.sh)"
+    # Las dos cosas que solo necesita la entrega y que doctor no miraba. El script tiene su
+    # propio codigo de salida (1 si faltan los pesos), pero doctor informa: no aborta por eso.
+    if [ -f "${REPO_ROOT}/tools/preflight_entrega.sh" ]; then
+      bash "${REPO_ROOT}/tools/preflight_entrega.sh" "${REPO_ROOT}" || true
+    fi
     ;;
 
   check-tab) uvrun python tools/check_tab.py "$@" ;;
