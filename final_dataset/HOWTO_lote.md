@@ -127,7 +127,7 @@ Flags que vas a usar de verdad:
 sed -n '1,20p' lote3/RENDIMIENTO.md
 cat lote3/informes/cobertura_munecas.csv
 ls lote3/final/
-grep -m1 "regimen de la cadena de voz" lote3/final/DATASET.md
+grep -m1 "voice chain regime" lote3/final/DATASET.md
 Polymnia/.venv/bin/python - <<'PY'
 import json; m=json.load(open("lote3/final/manifest.json"))
 f=m["features"]; c=m["clip_id_mapping"]
@@ -155,7 +155,7 @@ Señales de que algo va mal, y qué significa:
 | `clips en la base: N` menor que los Parquet | el DuckDB no tragó todo; mira `logs/08_merge.log` (el paso `hefesto` deja exit 0 aunque fallen inserts) |
 | `anotación visual: 0 clips con etiquetas, N con error` | el `error` del log dice por qué. Un `401` **con la clave ya exportada** sí es credencial o endpoint; arreglado eso, `--desde theia --force` anota solo los que faltan |
 | `cobertura_munecas.csv` con dos columnas por debajo de 60 % | clips sin muñecas medibles: no te van a dar features bimanuales, por mucho que OpenPose los aceptara |
-| `regimen de la cadena de voz \| **spline**` | el lote salió del PAROLE sin arreglar. Comprueba con `install_parole_fix.sh --comprobar`, instala, y regenera con `--desde voz --force` |
+| `voice chain regime \| **spline**` | el lote salió del PAROLE sin arreglar. Comprueba con `install_parole_fix.sh --comprobar`, instala, y regenera con `--desde voz --force` |
 | `manifest.json` con `"readme": null` | alguien corrió la etapa final con `--sin-diccionario` (o el lote es de antes). Regenera como dice el punto 4.1 |
 | `difere entre la medición y la publicación` | la etapa final aborta a propósito: el diccionario y el README se midieron sobre unos parquet que no son los publicados. Relanza `--desde final --force` |
 
@@ -194,7 +194,7 @@ Tres cosas que conviene saber de este paso:
   pasas un `--readme` dentro de la entrega que describe. Lo único que entra ahí es `DATASET.md`, y
   entra por `final_dataset.py --readme` antes de publicar.
 * **Si el generador se cae, es una buena señal.** Su guard se niega a publicar si aparece una
-  columna que nadie documentó (`columnas sin documentar: ...`). Un README incompleto que no lo
+  columna que nadie documentó (`undocumented columns: ...`). Un README incompleto que no lo
   dice es peor que ningún README. La salida de la columna nueva va en
   `diccionario_columnas.py`, en las tablas `MIDE_*` / `FORMULA_PROPIA`, citando la función que
   la calcula.
