@@ -59,13 +59,13 @@ Los flags que importan (el resto, `--help`):
 | `--limit N` | solo las N primeras líneas del TSV: la prueba barata |
 | `--offset N` | holgura por lado, **la misma en todo el pipeline**. Defecto **2.0**, el mismo que usa el constructor suelto `final_dataset.py`. Lotes ya cortados con otra (los 29 clips entregados y OZBEKALL se bajaron con **2.5**) exigen que lo pases explícito: la etapa 1 y la 2 lo miden con `ffprobe` y cortan el run si no coincide |
 | `--desde` / `--hasta ETAPA` | reanudar o cortar. Etapas: `tsv descarga asd preseleccion openpose limpieza voz merge theia final` |
-| `--force` | reutilizar la carpeta del lote. Lo que se sustituye se **aparta** a `informes/_anterior/<hora>/`, no se borra |
-| `--min-sp-both` / `--yolo-conf` / `--frames` | umbrales de la criba de muñecas (0.8 / 0.7 / 15, calibrados contra OpenPose) |
+| `--force` | reutilizar la carpeta del lote. Lo que se sustituye se **aparta** a `informes/_anterior/<hora>/`, no se borra. En la etapa `final` el apartadsolo ocurre al final de todo (medir → diccionario → publicar a scratch → comparar byte a byte): un abort deja la entrega anterior en su sitio, no el lote sin `final/` |
+| `--min-sp-any` / `--yolo-conf` / `--frames` | umbrales de la criba de muñecas (0.6 / 0.7 / 15). `--min-sp-any` decide sobre `sp_any` (la MEJOR de las dos muñecas); `--min-sp-both` **ya no existe** y el pipeline se niega en vez de re-significarlo |
 | `--gate` | además el filtro de visibilidad de `argos` con `--min-visible-percent` (defecto 80). **Por defecto NO** |
 | `--sin-limpiar` / `--criterio-limpieza` | etapa 6: desactivarla, o cambiar su criterio (`todo`/`torso`/`negro`/`nada`) |
 | `--skip-theia` / `--no-extended` / `--readme F` | anotaciones visuales, versión de features 2 en vez de 3, y tu README en vez del generado |
 | `--sin-diccionario` | no genera `DICCIONARIO_COLUMNAS` ni README: `final/` queda **sin** `DATASET.md` y el manifiesto sale con `"readme": None` |
-| `--device` / `--peso` / `--searchterm` | GPU, pesos YOLO y término del nombre de fichero |
+| `--device` / `--peso` / `--searchterm` | GPU, pesos YOLO y término del nombre de fichero. El `--searchterm` tiene que ser **el mismo con el que se descargó** el lote o la etapa final no casa ni un id (el defecto `beginning_to_end` casi nunca lo es) |
 
 Qué **no** hace el script por ti: el *contenido* de un README escrito a mano. El generado sale
 con los números medidos en el lote; si pasas `--readme F` con el de otra tanda, sus números de
@@ -77,13 +77,13 @@ con los números medidos en el lote; si pasas `--readme F` con el de otra tanda,
 |---|---|---|
 | `descarga` | `videos/raw` = nº de líneas del TSV | `Polymnia/failed_downloads.log` (va al `cwd` del repo y hace **append** entre tandas) |
 | `asd` | `videos/masked` > 0 | `videos/descartados/asd_sin_mascara`; lo rechaza `Has single scene: False` |
-| `preseleccion` | `admitidos` en `RENDIMIENTO.md` | `videos/descartados/preseleccion_sp_bajo`, con el `sp_both` en `munecas.csv` |
+| `preseleccion` | `admitidos` en `RENDIMIENTO.md` | `videos/descartados/preseleccion_sp_bajo`, con el score de cada clip en `munecas.csv` (`sp_any` decide, `sp_both` es ranking) |
 | `openpose` | nº de Parquet ≈ nº de clips | los Parquet que ves **aún no son el veredicto**: espera a la etapa 6 |
 | `limpieza` | `Parquet en 1_persons` > 0 y `en otros buckets` pequeño | `informes/limpieza_fantasmas.json` dice por qué se fue cada candidato |
 | `voz` | `prosodia: N parquet` y `palabras: N clips` | `apate.log` y `ecos.log`, que caen **dentro del lote** |
 | `merge` | `clips en la base: N` | `hefesto` puede dejar `exit 0` con inserts fallidos: mira `08_merge.log` |
 | `theia` | `anotación visual: N clips con etiquetas, 0 con error` | el `error` de `09_theia.log` dice por qué; con las 7 columnas a NULL el resto del dataset sigue sirviendo |
-| `final` | `final_frames`/`final_videos`, `emparejados: N (exactos N)`, `README publicado: DATASET.md` y `comprobado: lo publicado es byte a byte…` | si hay no-exactos, el `--offset` no coincide con la descarga; si peta con `undocumented columns`, el código ganó una columna que nadie describió: hay que describirla, no saltarse el guard |
+| `final` | `final_frames`/`final_videos`, `emparejados: N (exactos N)`, `README publicado: DATASET.md` y `comprobado: lo que se va a publicar es byte a byte…` | si sale `ningun clip de este tab casa con los N ids`, lee el mensaje: imprime el `--searchterm` usado y dos ids de muestra, y casi siempre ESE es el fallo (no «faltan etapas»: eso lo supuse yo y me costó media hora y una entrega apartada). Si hay no-exactos, el `--offset` no coincide con la descarga; si peta con `undocumented columns`, el código ganó una columna que nadie describió: hay que describirla, no saltarse el guard |
 
 ### La etapa 6 decide cuántos clips sobreviven
 
@@ -225,10 +225,30 @@ $PY final_dataset/wrist_prescreen.py \
     --min-conf 0.7 --frames 15 --device 0
 ```
 
-Criterio de admisión: **`sp_both >= 0.8`** (fracción de los 15 frames muestreados en los que
-el cuerpo con la cara más confiable tiene ambas muñecas con `conf >= 0.7`).
+Criterio de admisión: **`sp_any >= 0.6`** — `sp_any` es la fracción de los 15 frames muestreados
+en la que el cuerpo con la cara más confiable tiene **al menos una** muñeca con `conf >= 0.7`
+(`max(sp_right, sp_left)`).
 
-Calibración medida sobre los 29 clips que ya tienen OpenPose hecho:
+Por qué una muñeca y no las dos, y por qué esto es un cambio de dataset: la regla anterior
+era `sp_both >= 0.8` (las dos muñecas en el **mismo** frame). Se auditó con OpenPose sobre los
+16 clips que esa regla descartó en FREQ025, y se dejó uno que OpenPose valoró luego a
+**91,9 % / 100 %** de cobertura con `gate=accepted`. Irrecuperable: la criba corre antes de
+OpenPose. La matriz de los 20 clips del lote, con la verdad medida por OpenPose:
+
+| regla | admite | TP | FP | FN | recall |
+|---|---|---|---|---|---|
+| `sp_both >= 0.8` (la de la entrega FREQ025) | 4 | 3 | 1 | 1 | 75 % |
+| `sp_any >= 0.6` (la actual) | 5 | 4 | 1 | 0 | 100 % |
+
+Cuesta **+1 clip de GPU sobre 20** y no cuela ningún falso nuevo. Admitir una muñeca no
+baja la calidad de las features: `gesture_features.py` calcula derecha e izquierda por
+separado y tolera que falte una; lo que no puede fabricar son las dos.
+
+Lo que **no** arregla esto: el único falso positivo que queda (`WKYC 102.005`, `sp_both` justo
+0,8 y 69,5 % real en la muñeca derecha) tampoco se quita bajando `--yolo-conf` — medido sobre
+los 29 clips de calibración: con 0,5 y con 0,2 entran los mismos útiles y además algún basura.
+
+El umbral de confianza del detector sigue calibrado igual:
 
 | conf | clips buenos retenidos | clips malos que se cuelan |
 |---|---|---|
@@ -236,12 +256,15 @@ Calibración medida sobre los 29 clips que ya tienen OpenPose hecho:
 | 0,5 | 4/4 | 3/25 |
 | **0,7** | **4/4** | **1/25** |
 
-`sp_both` es la columna que decide. `both` es la versión estricta (solo frames con exactamente
-una persona) y solo tiene sentido sobre `masked`.
+`sp_any` es la columna que decide; `sp_both` se sigue escribiendo como ranking y como
+-evidencia de lo que hacía la regla anterior. `both` es la versión estricta (solo frames con
+exactamente una persona) y solo tiene sentido sobre `masked`.
 
-Para la tanda nueva: **guarda la lista de descartados con su score**. Con 4 positivos de
-calibración, el umbral es una hipótesis razonable, no un hecho; si ves que la separación no
-es limpia, súbelo a 0,8 de conf antes de tirar clips.
+Estas cifras no son fe: se re-miden con `tools/auditoria_criba.py`, que pasa OpenPose sobre
+los clips que la criba tiró. Sobre una entrega ya construida con la regla estricta, audita
+con `--min-sp-both 0.8` (si no, le cambias la regla y mides otra población). Y son de UN lote
+con n=20: el intervalo del falso negativo es ancho (0,2–30,9 %), así que en un corpus nuevo
+la primera tanda merece auditoría propia antes de fiarse del umbral.
 
 Copiar los admitidos a la carpeta que consume OpenPose:
 
@@ -250,7 +273,7 @@ mkdir -p $LOTE/videos/1_person
 $PY - <<'PY'
 import pandas as pd, shutil
 d = pd.read_csv("lote3/munecas.csv")            # cambia lote3
-sel = d[d.sp_both >= 0.8]
+sel = d[d.sp_any >= 0.6]
 for _, r in sel.iterrows(): shutil.copy(r.path, f"lote3/videos/1_person/{r.video}")
 print(f"admitidos {len(sel)} de {len(d)}")
 PY
@@ -479,12 +502,18 @@ se interrumpió a mitad; se aparta sola al relanzar.
   instalado ha derivado. Es el primer chequeo del HOWTO antes de lanzar un lote.
 * **`dfMaker` escribe la prosodia con dos estructuras** (primero `<clip>/<clip>_prosody.parquet`
   y unos 24 s después la copia plana `<clip>.parquet`). Cuenta clips, no ficheros.
-* **`polymnia theia` sin la clave exportada manda `Bearer none` y te devuelve `401`.** No es la
-  clave: `theia.py` fija el default de `--api-key` con `os.environ.get("THEIA_API_KEY", "none")`
-  antes de cargar el `.env`, y `"none"` es una cadena verdad, así que el `.env` ya no llega a
-  usarse. `pipeline_lote.sh` exporta las tres variables del `.env` antes de llamar (medido: sin
-  exportar `error=1`, exportando `ok=1`). Y ojo con la métrica: cuando Theia va **bien** deja la
-  columna `error` como cadena vacía, no como NULL.
+* **`polymnia theia` lee el `.env` él solo: no exportes nada.** Precedencia flag > entorno >
+  `.env`, y el log de la etapa dice `clave:.env` / `clave:entorno` / `clave:sin clave` sin escribir
+  nunca la clave. Dos cosas que estaban mal y estaban documentadas aquí como si fueran el
+  contrato: (1) `theia.py` fijaba el default de `--api-key` con `os.environ.get("THEIA_API_KEY",
+  "none")` al construir el parser, antes de `load_env`, y `"none"` es una cadena verdad, así que
+  mandaba `Bearer none` → 401; (2) `pipeline_lote.sh` comprobaba `[ -f "$RAIZ/Polymnia/.env" ]`,
+  pero `$RAIZ` **ya es** el repo `Polymnia`, así que preguntaba por `Polymnia/Polymnia/.env` y la
+  etapa 9 se saltaba **siempre** — un lote salía sin las 7 columnas de anotación y sin ninguna
+  traza dentro del lote. Arreglado en `theia.py` (con tests en `tools/test_theia.py`) y en la
+  etapa 9, que ahora corre por defecto, escribe el motivo de un omitido en `logs/09_theia.log` y
+  lo deja en `conteos.tsv`. Y ojo con la métrica: cuando Theia va **bien** deja la columna `error`
+  como cadena vacía, no como NULL.
 * **El scratch de TalkNet-ASD está fuera del lote pero es transitorio**: `TalkNet-ASD/output/`
   queda vacío al acabar.
 * **El diccionario y el README vienen con la etapa final, pero tienen truco de orden.** `DATASET.md`

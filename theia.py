@@ -21,9 +21,10 @@ Resultados:
   - DuckDB: columnas nuevas en `multi_data` (consultables junto al resto) y una
     tabla `video_annotations` con una fila por video.
 
-Credenciales: --api-base/--api-key/--model o, si se omiten, las variables
-THEIA_API_BASE / THEIA_API_KEY / THEIA_MODEL, leidas tambien de un .env en la
-rai­z del repo (el .env esta excluido de git; usa .env.example como plantilla).
+Credenciales: por defecto se leen del .env de la raiz del repo (el .env esta
+excluido de git; usa .env.example como plantilla), y el entorno manda sobre el
+.env. Las flags --api-base/--api-key/--model mandan sobre ambos. Nada de esto
+hace falta exportarlo: el .env se carga ANTES de resolver la configuracion.
 
 Pruebas: tools/test_theia.py (validador, muestreo de frames, limpieza de la
 respuesta, y un e2e contra un servidor OpenAI-compatible falso).
@@ -74,10 +75,21 @@ class AnnotationError(ValueError):
 
 # ------------------------------------------------------------------ env ----
 
-def load_env(path: Path) -> None:
-    """Carga KEY=VALUE de un .env sin pisar variables ya definidas."""
+ENV_KEYS = {"api_base": "THEIA_API_BASE", "api_key": "THEIA_API_KEY",
+            "model": "THEIA_MODEL"}
+NO_KEY = "none"  # lo que se manda a un endpoint sin autenticacion
+
+
+def load_env(path: Path, env: dict | None = None) -> set:
+    """Carga KEY=VALUE de un .env sin pisar variables ya definidas.
+
+    Devuelve las claves que añadio, que es lo que permite decir de donde salio
+    cada dato (`describe_endpoint`) sin tener que adivinarlo ni escribir la clave.
+    """
+    env = os.environ if env is None else env
+    added: set = set()
     if not path.is_file():
-        return
+        return added
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -85,8 +97,52 @@ def load_env(path: Path) -> None:
         key, _, value = line.partition("=")
         key = key.strip().removeprefix("export ").strip()
         value = value.strip().strip("'\"")
-        if key and key not in os.environ:
-            os.environ[key] = value
+        if key and key not in env:
+            env[key] = value
+            added.add(key)
+    return added
+
+
+def resolve_endpoint(cli_base=None, cli_key=None, cli_model=None,
+                     env: dict | None = None, dotenv_added=()) -> tuple:
+    """Endpoint, clave y modelo con prioridad flag > entorno > .env.
+
+    `env` es el entorno YA con el .env cargado (`load_env` no pisa lo que habia,
+    por eso el entorno gana). `dotenv_added` son las claves que añadio `load_env`.
+
+    La clave ausente se convierte en `"none"` -- un endpoint sin autenticacion es
+    legitimo -- pero eso pasa AQUI, despues de mirar el .env. Resolverla antes
+    (como un `default=os.environ.get(..., "none")` en el parser) es el bug que
+    mandaba `Bearer none` y recibia 401 con el .env perfecto en el disco: `"none"`
+    es truthy, asi que ninguna linea posterior la recuperaba ya jamas.
+
+    Devuelve (config, origen), con `origen` en {"flag", "entorno", ".env",
+    "ausente", "sin clave"} por campo: se escribe en el log para poder depurar
+    sin escribir la clave.
+    """
+    env = os.environ if env is None else env
+    added = set(dotenv_added)
+    config, origen = {}, {}
+    for field, cli_value in (("api_base", cli_base), ("api_key", cli_key), ("model", cli_model)):
+        if cli_value:
+            config[field], origen[field] = cli_value, "flag"
+            continue
+        value = env.get(ENV_KEYS[field])
+        if value:
+            config[field] = value
+            origen[field] = ".env" if ENV_KEYS[field] in added else "entorno"
+        else:
+            config[field] = None
+            origen[field] = "ausente"
+    if not config["api_key"]:
+        config["api_key"], origen["api_key"] = NO_KEY, "sin clave"
+    return config, origen
+
+
+def describe_endpoint(config: dict, origen: dict) -> str:
+    """Una linea de configuracion legible. Nunca la clave: solo de donde viene."""
+    return (f"model={config['model']} @ {config['api_base']}  "
+            f"(base:{origen['api_base']} clave:{origen['api_key']} modelo:{origen['model']})")
 
 
 # ------------------------------------------------------------ esquema ----
@@ -473,20 +529,29 @@ def annotate_dataset(input_folder, n_persons, db_name, api_base, api_key, model,
 
 # ---------------------------------------------------------------- cli ----
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
         epilog="sin --api-base/--api-key/--model se usan THEIA_API_BASE/THEIA_API_KEY/"
-               "THEIA_MODEL del entorno o del .env de la raiz del repo")
+               "THEIA_MODEL: el entorno manda sobre el .env de la raiz del repo, y el .env "
+               "se carga siempre, no hace falta exportarlo")
     parser.add_argument("-i", "--input_folder", required=True,
                         help="carpeta del pipeline (con dataset/ y videos/)")
     parser.add_argument("-n", "--n_persons", type=int, required=True)
     parser.add_argument("-d", "--db_name", default=None,
                         help="DuckDB ya cargado (el mismo de `merge`)")
     parser.add_argument("--csv", default=None, help="ruta del CSV de anotaciones")
-    parser.add_argument("--api-base", default=os.environ.get("THEIA_API_BASE"))
-    parser.add_argument("--api-key", default=os.environ.get("THEIA_API_KEY", "none"))
-    parser.add_argument("--model", default=os.environ.get("THEIA_MODEL"))
+    # Defaults a None a proposito: la configuracion se resuelve DESPUES de cargar el
+    # .env (abajo). Poner aqui os.environ.get(...) la resolveria antes de que el
+    # .env exista en el entorno, que es como se colaba el 401. Esta probado en
+    # tools/test_theia.py:test_parser_defaults_no_resuelven_el_entorno.
+    parser.add_argument("--api-base", default=None,
+                        help="por defecto THEIA_API_BASE (entorno o .env)")
+    parser.add_argument("--api-key", default=None,
+                        help="por defecto THEIA_API_KEY (entorno o .env); sin valor "
+                             f"en ningun sitio se manda {NO_KEY!r}, p.ej. un vLLM abierto")
+    parser.add_argument("--model", default=None,
+                        help="por defecto THEIA_MODEL (entorno o .env)")
     parser.add_argument("--attempts", type=int, default=3,
                         help="reintentos de respuesta invalida por parte (defecto 3)")
     parser.add_argument("--workers", type=int, default=4)
@@ -496,15 +561,23 @@ def main() -> int:
                              "los modelos de razonamiento lo gastan en su cadena "
                              "oculta y se quedan sin espacio para el JSON")
     parser.add_argument("--no-db", action="store_true", help="solo CSV, no tocar DuckDB")
-    args = parser.parse_args()
+    return parser
 
-    load_env(Path(__file__).resolve().parent / ".env")
-    args.api_base = args.api_base or os.environ.get("THEIA_API_BASE")
-    args.api_key = args.api_key or os.environ.get("THEIA_API_KEY", "none")
-    args.model = args.model or os.environ.get("THEIA_MODEL")
+
+def main(argv=None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    added = load_env(Path(__file__).resolve().parent / ".env")
+    config, origen = resolve_endpoint(args.api_base, args.api_key, args.model,
+                                      dotenv_added=added)
+    args.api_base, args.api_key, args.model = (config["api_base"], config["api_key"],
+                                               config["model"])
     if not args.api_base or not args.model:
-        parser.error("falta el endpoint: define THEIA_API_BASE y THEIA_MODEL "
-                     "(.env o --api-base/--model)")
+        parser.error("falta el endpoint: define THEIA_API_BASE y THEIA_MODEL en el .env "
+                     f"de {Path(__file__).resolve().parent} (o en el entorno, o con "
+                     "--api-base/--model)")
+    print(f"[theia] {describe_endpoint(config, origen)}")
 
     db_name = args.db_name or str(Path(args.input_folder) / "dataset"
                                   / f"{args.n_persons}_persons" / "dataset.duckdb")
