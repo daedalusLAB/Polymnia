@@ -30,8 +30,7 @@ plantar() {  # plantar <directorio_con_final_dataset>
   mkdir -p "$1/upstream_parole"
   cp "$AQUI/install_parole_fix.sh" "$1/install_parole_fix.sh"
   cp "$AQUI/upstream_parole/process_prosody.R" \
-     "$AQUI/upstream_parole/prosody_align.R" \
-     "$AQUI/upstream_parole/test_prosody_interp.py" "$1/upstream_parole/"
+     "$AQUI/upstream_parole/prosody_align.R" "$1/upstream_parole/"
 }
 
 marcar_repo() {  # marcar_repo <raiz_de_polymnia>  makes the tree look like a Polymnia checkout
@@ -50,11 +49,23 @@ marcar_repo "$POLY"
 sal="$(bash "$POLY/final_dataset/install_parole_fix.sh" 2>&1)"; rc=$?
 check "repo layout: installs without error" $rc "$(echo "$sal" | tail -1)"
 n=$(find "$POLY/create_datasets/parole/scripts" "$POLY/tools" -type f 2>/dev/null | wc -l)
-check "repo layout: the three files land in the repo" $([ "$n" -eq 3 ]; echo $?) "hay $n de 3"
+check "repo layout: both faithful copies land in the repo" $([ "$n" -eq 2 ]; echo $?) "hay $n de 2"
 check "repo layout: nothing is created under Polymnia/Polymnia" \
   $([ ! -e "$POLY/Polymnia" ]; echo $?) "se creo Polymnia/Polymnia"
+# The regression: Polymnia maintains its own test with clearer [skip] messages, and the
+# installer used to carry it as a "faithful copy". Overwriting it was the bug.
+check "repo layout: --aplicar leaves Polymnia's own test alone" \
+  $([ ! -e "$POLY/tools/test_prosody_interp.py" ]; echo $?) "instalo una copia peor sobre el test del repo"
 sal="$(bash "$POLY/final_dataset/install_parole_fix.sh" --comprobar 2>&1)"; rc=$?
 check "repo layout: --comprobar agrees with the canonical copies" $rc "$(echo "$sal" | tail -1)"
+check "repo layout: the co-maintained test is announced, not judged" \
+  $(echo "$sal" | grep -qE "(co-maintained|missing)[[:space:]]+tools/test_prosody_interp\.py"; echo $?) "$(echo "$sal" | head -3 | tr '\n' ' ')"
+mkdir -p "$POLY/tools" && printf '# local version, mejorada aqui\n' > "$POLY/tools/test_prosody_interp.py"
+sal="$(bash "$POLY/final_dataset/install_parole_fix.sh" --comprobar 2>&1)"; rc=$?
+check "repo layout: a differing local test is not a red --comprobar" $rc "$(echo "$sal" | tail -1)"
+check "repo layout: a differing local test is reported as co-maintained, never as DIFIERE" \
+  $(echo "$sal" | grep -q "co-maintained.*tools/test_prosody_interp.py" \
+     && ! echo "$sal" | grep -q "DIFIERE.*tools/test_prosody_interp.py"; echo $?) "$(echo "$sal" | grep tools/test_prosody_interp.py || echo 'no lo menciono')"
 
 # A real difference must still be red, otherwise the agreement above proves nothing.
 printf '# tampered\n' >> "$POLY/create_datasets/parole/scripts/prosody_align.R"
@@ -73,7 +84,7 @@ marcar_repo "$HER/Polymnia"
 sal="$(bash "$HER/final_dataset/install_parole_fix.sh" 2>&1)"; rc=$?
 check "sibling layout: installs without error" $rc "$(echo "$sal" | tail -1)"
 n=$(find "$HER/Polymnia/create_datasets/parole/scripts" "$HER/Polymnia/tools" -type f 2>/dev/null | wc -l)
-check "sibling layout: files land in the neighbouring checkout" $([ "$n" -eq 3 ]; echo $?) "hay $n de 3"
+check "sibling layout: files land in the neighbouring checkout" $([ "$n" -eq 2 ]; echo $?) "hay $n de 2"
 check "sibling layout: nothing leaked into final_dataset/" \
   $([ ! -e "$HER/final_dataset/create_datasets" ] \
     && [ ! -e "$HER/final_dataset/tools/test_prosody_interp.py" ]; echo $?)
@@ -85,7 +96,7 @@ marcar_repo "$OTRA/Polymnia"
 mkdir -p "$OTRA/otro_sitio/create_datasets/parole/scripts" "$OTRA/otro_sitio/tools"
 sal="$(bash "$OTRA/final_dataset/install_parole_fix.sh" --dest "$OTRA/otro_sitio" 2>&1)"; rc=$?
 n=$(find "$OTRA/otro_sitio" -type f 2>/dev/null | wc -l)
-check "--dest overrides the layout probe" $([ "$rc" -eq 0 ] && [ "$n" -eq 3 ]; echo $?) \
+check "--dest overrides the layout probe" $([ "$rc" -eq 0 ] && [ "$n" -eq 2 ]; echo $?) \
   "$(echo "$sal" | tail -1)"
 
 # --- refusal: a checkout with no PAROLE must stay an error, naming the path -------------
