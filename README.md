@@ -74,25 +74,17 @@ git clone https://github.com/daedalusLAB/parole create_datasets/parole
 bash final_dataset/install_parole_fix.sh               # install the canonical scripts
 bash final_dataset/install_parole_fix.sh --comprobar   # must agree with the canonical copies
 
-# 4. TalkNet-ASD as a sibling of the repo. Clone this fork rather than plain
-#    upstream: it carries the fixes this pipeline runs on (speaker selection,
-#    missing track ids, fps as a float). State in use: e802c54d33bdf4fbdb6d3bcb24ffec9883d8ff02.
-git clone https://github.com/raul-agent/TalkNet-ASD.git ../TalkNet-ASD
+# 4. TalkNet-ASD as a sibling of the repo. The original repository carries the fixes
+#    this pipeline runs on (speaker selection, missing track ids, fps as a float) since
+#    its PR #1; the code that produced our deliveries is commit
+#    e802c54d33bdf4fbdb6d3bcb24ffec9883d8ff02, which main contains.
+git clone https://github.com/RaulKite/TalkNet-ASD.git ../TalkNet-ASD
 
-#    Its two weights are ignored by that repo (*.pth, *.model), so no clone has them.
-#    They are published as release assets of the same fork; the checksums below are
-#    what a working deployment has:
-WEIGHTS=https://github.com/raul-agent/TalkNet-ASD/releases/download/weights-e802c54
-curl -L -o /tmp/pretrain_TalkSet.model "$WEIGHTS/pretrain_TalkSet.model"
-curl -L -o /tmp/sfd_face.pth           "$WEIGHTS/sfd_face.pth"
-sha256sum -c - <<'SUMS'
-d985ddd07dca08864a28337726f5b7d91b6426bebc7327f0e9b21cf9ff1cc937  /tmp/pretrain_TalkSet.model
-d54a87c2b7543b64729c9a25eafd188da15fd3f6e02f0ecec76ae1b30d86c491  /tmp/sfd_face.pth
-SUMS
-cp /tmp/pretrain_TalkSet.model ../TalkNet-ASD/
-cp /tmp/sfd_face.pth           ../TalkNet-ASD/model/faceDetector/s3fd/
-#    Copying them from another machine instead of downloading? Use `cp -r`, not `cp -a`:
-#    the files there are mode 600 and -a keeps that mode, which locks you out of ASD.
+#    The two checkpoints are not in Git (*.pth and *.model are ignored on purpose, they
+#    never change with the code). The repository ships a fetcher that checks each file's
+#    SHA-256 before installing it and writes them mode 644; checksums, sizes and how to
+#    point it at your own mirror are in that repository's WEIGHTS.md.
+( cd ../TalkNet-ASD && ./get_weights.sh )
 
 # 5. DuckDB CLI. uv installs the Python binding, not the command line tool.
 mkdir -p tools/bin
@@ -118,10 +110,11 @@ SUMS
 ./bin/polymnia doctor
 ```
 
-Steps 4 and 7 are not decoration: those hashes are the SHA-256 of what those URLs serve
-today, and `doctor` only checks presence, never content. If one differs you have a
-different artifact, and `informes/procedencia.json` would later record a weight nobody
-can name.
+Steps 4 and 7 are not decoration. `get_weights.sh` refuses to install a checkpoint whose
+SHA-256 is not the one its repository publishes, and the hashes in step 7 are the SHA-256
+of what those two URLs serve today. `doctor` only checks presence, never content: if a hash
+differs you have a different artifact, and `informes/procedencia.json` would later record a
+weight nobody can name.
 
 ### What `uv sync` does not install
 
@@ -130,7 +123,7 @@ can name.
 | Dependency | Required setup |
 |---|---|
 | OpenPose | Compiled binary; default root `/opt/openpose`, or `--openpose_path` for `argos` |
-| TalkNet-ASD | Checkout at `../TalkNet-ASD` (override with `POLYMNIA_ASD_PATH`). Use [the fork this pipeline runs on](https://github.com/raul-agent/TalkNet-ASD): [upstream](https://github.com/RaulKite/TalkNet-ASD) does not carry the fixes for speaker selection, missing track ids or float `fps`. Its two weights are ignored by Git, so they are [release assets of the fork](https://github.com/raul-agent/TalkNet-ASD/releases/tag/weights-e802c54); step 4 installs them |
+| TalkNet-ASD | Checkout at `../TalkNet-ASD` (override with `POLYMNIA_ASD_PATH`). The [original repository](https://github.com/RaulKite/TalkNet-ASD) carries the fixes this pipeline runs on (speaker selection, missing track ids, float `fps`); the code that produced our deliveries is commit `e802c54d33bdf4fbdb6d3bcb24ffec9883d8ff02`, which `main` contains. Its two weights are ignored by Git, so the repository ships `get_weights.sh`, which fetches them from release assets and verifies their SHA-256 (see its `WEIGHTS.md`) |
 | R | `multimolang`, `arrow`, `logger`; local packages in `R_libs/`, configuration in `config_dfMaker.json` |
 | Parole / Praat | [Parole](https://github.com/daedalusLAB/parole) under `create_datasets/parole/`, installed with its own `install_parole.sh`, then `bash final_dataset/install_parole_fix.sh` for the prosody scripts in this repo |
 | YOLO pose weights | `modelos/yolo11x-pose.pt`, 118 481 010 bytes, SHA-256 `013c43543b0751b8918486ba96e01ee44a59040683a07f96cc22bcc2cb7785f8`, from [ultralytics assets](https://github.com/ultralytics/assets/releases/tag/v8.3.0). Without it the wrist prescreen cannot run and `doctor` exits 1; `POLYMNIA_YOLO_WEIGHTS` overrides the path |
