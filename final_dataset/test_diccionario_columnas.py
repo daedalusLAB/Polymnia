@@ -67,8 +67,8 @@ def test_la_definicion_especifica_gana_a_la_familia():
           "" if f else "sin resolver" if f is None else f["formula_unidades"][:120])
     sin_std = fila("right_speed_std")
     check("right_speed_std cae en la familia de distribución por sufijo",
-          sin_std is not None and "percentil" not in sin_std["que_mide"]
-          and "desviación" in sin_std["que_mide"],
+          sin_std is not None and "percentile" not in sin_std["que_mide"]
+          and "standard deviation" in sin_std["que_mide"],
           "" if sin_std else "sin resolver")
 
 
@@ -79,12 +79,12 @@ def test_los_comodines_del_codigo_resuelven():
           "" if prefijo else "sin resolver")
     sufijo = fila("right_speed_p05")
     check("right_speed_p05 resuelve por comodín de sufijo",
-          sufijo is not None and "percentil 5" in sufijo["que_mide"]
-          and "velocidad" in sufijo["que_mide"],
+          sufijo is not None and "5th percentile" in sufijo["que_mide"]
+          and "speed" in sufijo["que_mide"],
           "" if sufijo else "sin resolver")
     area = fila("left_bbox_area")
     check("left_bbox_area quita el prefijo de mano antes de buscar",
-          area is not None and area["ambito"] == "mano izquierda",
+          area is not None and area["ambito"] == "left hand",
           "" if area else "sin resolver")
 
 
@@ -169,7 +169,7 @@ def test_una_entrega_sintetica_sale_completa_y_el_guard_peta():
                   "salió 0: habría publicado un README incompleto")
         except SystemExit as salida:
             check("una columna nueva sin documentar hace fallar al generador",
-                  "sin documentar" in str(salida) and "right_coseno_de_la_cabeza" in str(salida),
+                  "undocumented" in str(salida) and "right_coseno_de_la_cabeza" in str(salida),
                   str(salida)[:120])
         check("cuando falla no deja el CSV a medias escrito", not os.path.exists(csv))
 
@@ -192,17 +192,17 @@ def test_el_readme_lleva_portada_con_los_numeros_de_esta_entrega():
         texto = open(readme, encoding="utf-8").read()
         cabecera = texto[:1500]
         check("la portada dice filas y columnas de las dos tablas",
-              "2 clips x 7 columnas" in cabecera and "2 fotogramas x 4 columnas" in cabecera,
-              [linea for linea in cabecera.splitlines() if "columnas |" in linea])
+              "2 clips x 7 columns" in cabecera and "2 frames x 4 columns" in cabecera,
+              [linea for linea in cabecera.splitlines() if "columns |" in linea])
         check("la portada trae la version de features y el padding del manifiesto",
-              "3 (bloque extendido: incluido)" in cabecera
+              "3 (extended block: included)" in cabecera
               and "2.5 s, searchterm `prueba`" in cabecera
               and "2026-10-14T11:23:49+00:00" in cabecera,
               [linea for linea in cabecera.splitlines() if "features |" in linea or "padding" in linea])
         check("el README avisa de que se genera y no se edita a mano",
-              "se genera" in cabecera and "regenera" in cabecera)
+              "is generated" in cabecera and "regenerate" in cabecera)
         check("debajo de la portada sigue estando el diccionario",
-              "`right_max_speed`" in texto and "Definiciones, tal como están en el código" in texto)
+              "`right_max_speed`" in texto and "Definitions, exactly as they are in the code" in texto)
         try:
             with contextlib.redirect_stdout(io.StringIO()):
                 dic.main(["--final", entrega, "--readme", os.path.join(entrega, "DATASET.md"),
@@ -210,7 +210,7 @@ def test_el_readme_lleva_portada_con_los_numeros_de_esta_entrega():
             check("un --readme dentro de final/ se rechaza", False, "lo escribio igualmente")
         except SystemExit as salida:
             check("un --readme dentro de final/ se rechaza (romperia el paquete hashado)",
-                  "atomico" in str(salida), str(salida)[:90])
+                  "atomic" in str(salida), str(salida)[:90])
 
 
 def test_un_readme_sin_voz_no_ensena_ceros():
@@ -226,10 +226,10 @@ def test_un_readme_sin_voz_no_ensena_ceros():
             dic.main(["--final", entrega, "--readme", readme,
                       "--polymnia_root", POLY])
         texto = open(readme, encoding="utf-8").read()
-        bloque = texto[texto.find("## La voz"):][:1400]
+        bloque = texto[texto.find("## The voice"):][:1400]
         check("sin columnas de voz el README lo dice en vez de enseñar ceros",
-              "no trae columnas de voz" in bloque and "0 de 0" not in bloque
-              and "(sin columna)" not in bloque,
+              "does not carry voice columns" in bloque and "0 of 0" not in bloque
+              and "(no column)" not in bloque,
               [linea for linea in bloque.splitlines() if "|" in linea][:3])
 
 
@@ -254,8 +254,8 @@ def test_una_entrega_sin_bloque_extendido_no_peta():
         texto = open(md, encoding="utf-8").read()
         check("una entrega sin bloque extendido se documenta sin petar", True)
         check("sin contadores extendidos no inventa el numero de clips sustentados",
-              "0 de 1 clips" not in texto and "right_n_valid" in texto,
-              [linea for linea in texto.splitlines() if "sustento" in linea or "de 1 clips" in linea][:2])
+              "0 of 1 clips" not in texto and "right_n_valid" in texto,
+              [linea for linea in texto.splitlines() if "support" in linea or "of 1 clips" in linea][:2])
 
 
 def _readme_de(frames_extra, videos_extra=None):
@@ -285,33 +285,34 @@ VOZ_SPLINE = {"pitch": [120.0, 0.0, 900.0], "intensity": [60.0, -130.0, 58.0],
 def test_un_lote_con_voice_present_se_documenta_como_cadena_nueva():
     """Con `voice_present` y todo dentro de cotas, el README habla de la cadena nueva."""
     texto, _ = _readme_de(VOZ_ARREGLADA)
-    check("el regimen medido es la cadena con tramos", "| regimen de la cadena de voz | **tramos** |" in texto,
-          [l for l in texto.splitlines() if "regimen" in l][:1])
+    check("el regimen medido es la cadena con tramos",
+          "| voice chain regime | **segments** |" in texto,
+          [l for l in texto.splitlines() if "regime" in l][:1])
     check("la seccion nueva manda abrir la puerta con voice_present",
-          "voice_present" in texto and "Abre la puerta" in texto)
+          "voice_present" in texto and "Open the door" in texto)
     check("la seccion nueva no se describe a si misma como cadena antigua",
-          "sale de la cadena antigua" not in texto)
+          "comes out of the old chain" not in texto)
     check("el -200 dB de Praat no sale contado como valor imposible",
-          "por debajo de -200 dB | 0 fotogramas" in texto,
-          [l for l in texto.splitlines() if "armonicit" in l][:1])
+          "below -200 dB | 0 frames" in texto,
+          [l for l in texto.splitlines() if "harmonic" in l][:1])
     check("voice_present se cuenta, no se describe de oido",
-          "2 de 3 fotogramas con pista medida" in texto,
-          [l for l in texto.splitlines() if "pista medida" in l][:1])
+          "2 of 3 frames with a measured track" in texto,
+          [l for l in texto.splitlines() if "measured track" in l][:1])
 
 
 def test_un_lote_sin_voice_present_sale_como_cadena_antigua():
     """Sin `voice_present`, y con valores fuera de cotas, el README lo dice con las cifras."""
     texto, _ = _readme_de(VOZ_SPLINE)
     check("sin voice_present el regimen medido es la spline",
-          "| regimen de la cadena de voz | **spline** |" in texto,
-          [l for l in texto.splitlines() if "regimen" in l][:1])
+          "| voice chain regime | **spline** |" in texto,
+          [l for l in texto.splitlines() if "regime" in l][:1])
     check("la seccion antigua nombra la cadena antigua y apunta al arreglo",
-          "sale de la cadena antigua" in texto and "upstream_parole" in texto)
+          "comes out of the old chain" in texto and "upstream_parole" in texto)
     check("las cotas se cuentan sobre estos datos: pitch fuera en 2, HNR bajo el suelo en 1",
-          "fuera de 60-600 Hz | 2 fotogramas" in texto
-          and "por debajo de -200 dB | 1 fotogramas" in texto
-          and "fuera de 0-5500 Hz | 1 valores" in texto,
-          [l for l in texto.splitlines() if "fotogramas |" in l or "valores |" in l][:4])
+          "outside 60-600 Hz | 2 frames" in texto
+          and "below -200 dB | 1 frames" in texto
+          and "outside 0-5500 Hz | 1 values" in texto,
+          [l for l in texto.splitlines() if "frames |" in l or "values |" in l][:4])
 
 
 def test_un_lote_con_restos_de_spline_no_se_lla_ma_arreglado():
@@ -319,8 +320,8 @@ def test_un_lote_con_restos_de_spline_no_se_lla_ma_arreglado():
     voz = dict(VOZ_ARREGLADA, harmonicity=[8.0, -400.0, 9.0])
     texto, _ = _readme_de(voz)
     check("un valor fuera de cotas impide llamarse arreglada",
-          "**tramos con restos**" in texto,
-          [l for l in texto.splitlines() if "regimen" in l][:1])
+          "**segments with leftovers**" in texto,
+          [l for l in texto.splitlines() if "regime" in l][:1])
 
 
 def test_voice_present_sale_documentada_con_su_fuente():
@@ -328,7 +329,7 @@ def test_voice_present_sale_documentada_con_su_fuente():
     _, csv = _readme_de(VOZ_ARREGLADA)
     d = pd.read_csv(csv).set_index("columna")
     check("voice_present esta documentada con su familia y su fuente",
-          d.loc["voice_present", "familia"] == "voz (Praat)"
+          d.loc["voice_present", "familia"] == "voice (Praat)"
           and "process_prosody.R" in d.loc["voice_present", "fuente"],
           f'{d.loc["voice_present", "familia"]} | {d.loc["voice_present", "fuente"]}')
     check("pitch cita el alineador por tramos, no la spline",

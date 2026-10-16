@@ -596,7 +596,7 @@ if hacer final; then
     corre "$OUT/logs/10b_diccionario.log" "$PY" "$RAIZ/final_dataset/diccionario_columnas.py" \
       --final "$OUT/.medicion" --csv "$OUT/informes/DICCIONARIO_COLUMNAS.csv" \
       --md "$OUT/DICCIONARIO_COLUMNAS.md" --readme "$OUT/informes/README_entrega.md" \
-      || abortar "el diccionario falló. Si dice 'columnas sin documentar' es bueno: el código ha ganado una columna que nadie describió; documentala en gesture_features.py y relanza" final
+      || abortar "el diccionario falló. Si dice 'undocumented columns' es bueno: el código ha ganado una columna que nadie describió; documentala en gesture_features.py y relanza" final
     NDIC=$("$PY" -c "import pandas as pd,sys; print(len(pd.read_csv(sys.argv[1])))" \
             "$OUT/informes/DICCIONARIO_COLUMNAS.csv")
     [ "${NDIC:-0}" -gt 0 ] || abortar "el diccionario salió vacío" final

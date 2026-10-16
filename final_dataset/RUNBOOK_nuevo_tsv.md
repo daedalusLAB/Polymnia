@@ -83,7 +83,7 @@ con los números medidos en el lote; si pasas `--readme F` con el de otra tanda,
 | `voz` | `prosodia: N parquet` y `palabras: N clips` | `apate.log` y `ecos.log`, que caen **dentro del lote** |
 | `merge` | `clips en la base: N` | `hefesto` puede dejar `exit 0` con inserts fallidos: mira `08_merge.log` |
 | `theia` | `anotación visual: N clips con etiquetas, 0 con error` | el `error` de `09_theia.log` dice por qué; con las 7 columnas a NULL el resto del dataset sigue sirviendo |
-| `final` | `final_frames`/`final_videos`, `emparejados: N (exactos N)`, `README publicado: DATASET.md` y `comprobado: lo publicado es byte a byte…` | si hay no-exactos, el `--offset` no coincide con la descarga; si peta con `columnas sin documentar`, el código ganó una columna que nadie describió: hay que describirla, no saltarse el guard |
+| `final` | `final_frames`/`final_videos`, `emparejados: N (exactos N)`, `README publicado: DATASET.md` y `comprobado: lo publicado es byte a byte…` | si hay no-exactos, el `--offset` no coincide con la descarga; si peta con `undocumented columns`, el código ganó una columna que nadie describió: hay que describirla, no saltarse el guard |
 
 ### La etapa 6 decide cuántos clips sobreviven
 
@@ -495,7 +495,7 @@ se interrumpió a mitad; se aparta sola al relanzar.
   etapa con `--sin-diccionario`, el manifiesto vuelve a salir con `"readme": None` y las
   columnas documentadas (283, o 284 si el lote trae `voice_present`) no están escritas en ningún
   sitio: el manifiesto solo documenta **familias** (3 de 210
-  nombres literales). Y si el generador peta con `columnas sin documentar`, la columna nueva va en
+  nombres literales). Y si el generador peta con `undocumented columns`, la columna nueva va en
   las tablas `MIDE_*` / `FORMULA_PROPIA` de `diccionario_columnas.py` citando la función que la
   calcula: el guard está para eso, no para saltárselo.
 

@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Diccionario columna por columna de las dos tablas finales, generado desde el código.
+"""Column-by-column dictionary of the two final tables, generated from the code.
 
-Nada de lo que escribe este script se inventa aquí: cada fórmula y cada unidad se
-sacan de las constantes que viven junto a la matematica (`gesture_features.py`:
-FEATURE_UNITS, EXTENDED_FEATURE_UNITS, SEMANTICS) o de la función que calcula la
-columna (`_sequence_summary`, `load_frame_metadata`). Lo unico redactado a mano es
-la linea de "qué mide", y cada columna lleva una `fuente` que dice de donde salió
-el resto. Si aparece una columna sin resolver, el script falla en vez de callarse:
-asi un README nunca puede quedarse mintiendo cuando cambian las columnas.
+Nothing this script writes is invented here: every formula and every unit comes from the
+constants that live next to the maths (`gesture_features.py`: FEATURE_UNITS,
+EXTENDED_FEATURE_UNITS, SEMANTICS) or from the function that computes the column
+(`_sequence_summary`, `load_frame_metadata`). The only hand-written line is the "what it
+measures" one, and every column carries a `fuente` saying where the rest came from. If a
+column shows up unresolved, the script fails instead of staying quiet: that is how a
+README is kept from lying once the columns change.
 
-Además de la descripción, mide en el parquet entregado cuántos clips tienen dato
-real en cada columna: un estadistico con 3 de 29 clips no es lo mismo que uno con
-29, y eso es lo primero que un alumno tiene que poder ver.
+Besides the description, it measures in the delivered parquet how many clips carry a real
+value in each column: a statistic with 3 of 29 clips is not the same as one with 29, and
+that is the first thing a student has to be able to see.
 
-Con `--readme` escribe ademas el README de la entrega: el mismo documento con una
-portada de numeros medidos (filas, columnas, version de features, padding, fecha) y
-sin una sola cifra heredada de otra tanda. Ese fichero es el que `final_dataset.py`
-publica como `DATASET.md` dentro de `final/`, y por eso se genera **antes** de
-publicar: `pipeline_lote.sh` hace una pasada de medicion a `.medicion`, saca de ahi
-diccionario y README, publica `final/` con el README dentro, y compara los parquet de
-ambas pasadas para que el documento no pueda describir otra cosa que lo entregado.
+With `--readme` it also writes the README of the delivery: the same document with a cover
+of measured numbers (rows, columns, features version, padding, date) and not a single
+figure inherited from another batch. That file is the one `final_dataset.py` publishes as
+`DATASET.md` inside `final/`, and that is why it is generated **before** publishing:
+`pipeline_lote.sh` takes a measurement pass into `.medicion`, draws the dictionary and the
+README from there, publishes `final/` with the README inside, and compares the parquet of
+both passes so the document cannot describe anything but what was delivered.
 
     python diccionario_columnas.py --final lote3/final \
         --csv lote3/informes/DICCIONARIO_COLUMNAS.csv \
@@ -36,382 +36,382 @@ import sys
 
 import pandas as pd
 
-TABLA_MANO = {"right": "mano derecha", "left": "mano izquierda"}
+TABLA_MANO = {"right": "right hand", "left": "left hand"}
 
-# Lo que mide cada medida, en una linea. La formula y la unidad van debajo, tomadas
-# del codigo; aqui solo hace falta el significado, que el codigo no lo cuenta.
+# What each measure measures, on one line. The formula and the unit go underneath, taken
+# from the code; all that is needed here is the meaning, which the code does not tell.
 MIDE_V1 = {
-    "n_observed": "fotogramas del hueco en los que la fuente dio ese keypoint, aunque luego fuera rechazado por confianza",
-    "n_interpolated": "fotogramas rellenos por interpolación lineal entre dos extremos válidos (huecos de a lo sumo max_gap_frames)",
-    "n_valid": "fotogramas con medida usable: el denominador real de todo lo demás de esta mano",
-    "frac_observed": "n_observed entre frames_grid",
-    "frac_interpolated": "n_interpolated entre frames_grid; si es alto, la mitad de la trayectoria es reconstruida",
-    "frac_valid": "n_valid entre frames_grid",
-    "mean_speed": "velocidad media de la muñeca sobre los fotogramas válidos",
-    "max_speed": "la velocidad puntual más alta de la muñeca",
-    "mean_accel_magnitude": "módulo de aceleración medio",
-    "max_accel_magnitude": "módulo de aceleración máximo",
-    "path_length": "longitud de camino: suma de desplazamientos entre fotogramas consecutivos del mismo tramo contiguo",
-    "nx_range": "cuánto horizontales son los barridos: max - min de la coordenada x suavizada",
-    "ny_range": "cuánto verticales son los barridos: max - min de la coordenada y suavizada",
-    "mean_neck_distance": "a qué distancia del cuello se mueve la muñeca, de media",
-    "angle_mean": "dirección media del vector cuello->muñeca (media circular)",
-    "angle_std": "dispersión de esa dirección (medida de concentración, no una von Mises ajustada)",
-    "time_to_peak_speed": "segundos desde el primer fotograma con reloj hasta el fotograma más rápido",
-    "early_speed_mean": "velocidad media en el primer 10% del hueco de reloj",
-    "late_speed_mean": "velocidad media en el último 10% del hueco de reloj",
+    "n_observed": "frames of the span where the source did give that keypoint, even if it was later rejected on confidence",
+    "n_interpolated": "frames filled by linear interpolation between two valid endpoints (gaps of at most max_gap_frames)",
+    "n_valid": "frames with a usable measurement: the real denominator for everything else on this hand",
+    "frac_observed": "n_observed over frames_grid",
+    "frac_interpolated": "n_interpolated over frames_grid; if it is high, half of the trajectory is reconstructed",
+    "frac_valid": "n_valid over frames_grid",
+    "mean_speed": "mean wrist speed over the valid frames",
+    "max_speed": "the highest instantaneous wrist speed",
+    "mean_accel_magnitude": "mean acceleration magnitude",
+    "max_accel_magnitude": "maximum acceleration magnitude",
+    "path_length": "path length: sum of the displacements between consecutive frames of the same contiguous run",
+    "nx_range": "how horizontal the sweeps are: max - min of the smoothed x coordinate",
+    "ny_range": "how vertical the sweeps are: max - min of the smoothed y coordinate",
+    "mean_neck_distance": "how far from the neck the wrist moves, on average",
+    "angle_mean": "mean direction of the neck->wrist vector (circular mean)",
+    "angle_std": "spread of that direction (a concentration measure, not a fitted von Mises)",
+    "time_to_peak_speed": "seconds from the first frame with a clock to the fastest frame",
+    "early_speed_mean": "mean speed in the first 10% of the clock span",
+    "late_speed_mean": "mean speed in the last 10% of the clock span",
 }
 
 MIDE_BILATERAL_V1 = {
-    "n_both_hands": "fotogramas con las DOS muñecas válidas: sin esto, un estadistico bilateral no dice nada",
-    "frac_both_hands": "n_both_hands entre frames_grid",
-    "mean_pair_separation": "separación media entre las dos muñecas",
-    "max_pair_separation": "la mayor separación entre las dos muñecas en un mismo fotograma",
-    "mean_mirror_error_x": "media de |x_R + x_L|: cuánto se sale la pareja del eje vertical del cuerpo",
-    "mean_mirror_error_y": "media de |y_R - y_L|: cuánto las dos manos están a distinta altura",
-    "time_to_peak_pair_separation": "segundos hasta el fotograma de máxima separación entre manos",
+    "n_both_hands": "frames with BOTH wrists valid: without this, a bilateral statistic says nothing",
+    "frac_both_hands": "n_both_hands over frames_grid",
+    "mean_pair_separation": "mean separation between the two wrists",
+    "max_pair_separation": "the largest separation between the two wrists in a single frame",
+    "mean_mirror_error_x": "mean of |x_R + x_L|: how far the pair drifts from the vertical axis of the body",
+    "mean_mirror_error_y": "mean of |y_R - y_L|: how much the two hands sit at different heights",
+    "time_to_peak_pair_separation": "seconds to the frame of maximum separation between the hands",
 }
 
-# Familias del bloque extendido: una linea por familia, la formula va desde el codigo.
-# Las claves son los nombres de familia EXACTOS que salen de las claves de
-# EXTENDED_FEATURE_UNITS; si el codigo renombra una familia, la columna cae en el
-# guard de "sin documentar" en vez de quedarse con una descripcion vieja.
+# Families of the extended block: one line per family, the formula comes from the code.
+# The keys are the EXACT family names that come out of the keys of
+# EXTENDED_FEATURE_UNITS; if the code renames a family, the column falls into the
+# "undocumented" guard instead of keeping an old description.
 MIDE_FAMILIA = {
-    "distribution aggregates": "la forma completa de la distribución de esa medida en el clip, no solo su media",
-    "extent": "hasta dónde llega la muñeca en cada eje: extremos y dispersión de la coordenada suavizada",
-    "reversals": "cuántas veces cambia de sentido el movimiento en ese eje (agite, no desplazamiento)",
-    "reversals_per_s": "cambios de sentido por segundo, para comparar clips de distinta duración",
-    "hull_area": "área del envolvente convexo de la trayectoria: el área que la mano barre",
-    "ellipse_area": "área de la elipse de 2 desviaciones tipicas de la nube de puntos: el área 'habituada'",
-    "bbox_area": "área del rectángulo alineado con los ejes que encierra toda la trayectoria",
-    "scale-free intra-clip ratios": "cocientes entre dos estadisticos del MISMO clip: forma sin depender de otros clips",
-    "shape of the speed distribution": "asimetría y apuntamiento de la distribución de velocidad",
-    "frac_speed_gt_0p5 / 1p0 / 2p0": "fracción del tiempo con la mano por encima de una velocidad absoluta dada",
-    "speed_sq_mean, speed_sq_sum": "media y suma de la velocidad al cuadrado (lo que el código de referencia llamaba energía cinética)",
-    "n_speed": "fotogramas con velocidad finita: el denominador detrás de todos los estadisticos de velocidad de esta mano",
-    "longest_moving_s": "la tanda continua más larga moviendo esa mano por encima del umbral",
-    "cos_phase_*": "en qué dirección van las dos manos a la vez: cos del ángulo entre sus velocidades (+1 mismo sentido, -1 contrario)",
-    "frac_cos_gt_0p8, frac_cos_lt_m0p2": "cuánto del tiempo es in-fase o anti-fase de verdad",
-    "n_cos_phase": "fotogramas detrás de las cifras de fase: si es pequeño, la fase de ese clip no es un resultado",
-    "coactivity_frac_0p5, coactivity_frac_1p0": "fracción del tiempo con las DOS manos por encima del umbral de velocidad",
-    "coactivity_bout_*": "cuántas tandas hay y cuánto duran: ritmo de alternancia entre manos",
-    "mirror_error_x_std, mirror_error_y_std": "lo variable que es la simetría dentro del clip, no solo su media",
-    "abs_y_pair_sum_mean": "magnitud de la altura conjunta de la pareja de manos (NO es simetría)",
-    "pair_elevation_mean": "altura media de la pareja de manos respecto al cuello, con signo (positivo = por encima)",
-    "bbox_area_wrists": "área del rectángulo que tiene las dos muñecas como esquinas opuestas",
-    "jerk": "lo brusco que cambia la aceleración: la tercera derivada de la coordenada suavizada",
+    "distribution aggregates": "the full shape of that measure's distribution in the clip, not just its mean",
+    "extent": "how far the wrist reaches on each axis: extremes and spread of the smoothed coordinate",
+    "reversals": "how many times the movement changes direction on that axis (waving, not displacement)",
+    "reversals_per_s": "direction changes per second, to compare clips of different length",
+    "hull_area": "area of the convex hull of the trajectory: the area the hand sweeps",
+    "ellipse_area": "area of the 2 standard deviation ellipse of the point cloud: the 'usual' area",
+    "bbox_area": "area of the axis-aligned rectangle that encloses the whole trajectory",
+    "scale-free intra-clip ratios": "ratios between two statistics of the SAME clip: shape without depending on other clips",
+    "shape of the speed distribution": "skew and peakedness of the speed distribution",
+    "frac_speed_gt_0p5 / 1p0 / 2p0": "fraction of the time with the hand above a given absolute speed",
+    "speed_sq_mean, speed_sq_sum": "mean and sum of speed squared (what the reference code called kinetic energy)",
+    "n_speed": "frames with finite speed: the denominator behind every speed statistic on this hand",
+    "longest_moving_s": "the longest continuous run moving that hand above the threshold",
+    "cos_phase_*": "which way the two hands go at once: cos of the angle between their velocities (+1 same direction, -1 opposite)",
+    "frac_cos_gt_0p8, frac_cos_lt_m0p2": "how much of the time is genuinely in-phase or anti-phase",
+    "n_cos_phase": "frames behind the phase figures: if it is small, the phase of that clip is not a result",
+    "coactivity_frac_0p5, coactivity_frac_1p0": "fraction of the time with BOTH hands above the speed threshold",
+    "coactivity_bout_*": "how many bouts there are and how long they last: the alternation rhythm between hands",
+    "mirror_error_x_std, mirror_error_y_std": "how variable the symmetry is inside the clip, not just its mean",
+    "abs_y_pair_sum_mean": "magnitude of the joint height of the pair of hands (this is NOT symmetry)",
+    "pair_elevation_mean": "mean height of the pair of hands relative to the neck, signed (positive = above)",
+    "bbox_area_wrists": "area of the rectangle that has the two wrists as opposite corners",
+    "jerk": "how abruptly the acceleration changes: the third derivative of the smoothed coordinate",
 }
 
 MIDE_PROCEDENCIA = {
-    "id": "identificador del clip: nombre del procesado con el que encaja la ventana del TSV",
-    "people_id": "índice del candidato de OpenPose dentro del clip; en esta entrega siempre 1",
-    "frames_source": "filas que dio la fuente para este clip",
-    "frames_grid": "hueco de fotogramas entre el primero y el último observado (min..max), inclusive",
-    "frames_missing_grid": "huecos dentro de ese rango que la fuente no dio y que se marcan como inferidos",
-    "n_timed_frames": "fotogramas con marca de reloj real",
-    "n_timestamp_inferred": "fotogramas a los que se les prestó el reloj por interpolación corta entre dos con reloj",
-    "n_missing_timestamps": "frames_grid - n_timed_frames: fotogramas sin reloj, donde lo temporal es NULL",
-    "t_start": "primer reloj conocido de la secuencia (segundos del frame_timestamp de origen)",
-    "t_end": "último reloj conocido de la secuencia",
-    "duration_s": "t_end - t_start; es la duración MEDIDA del intervalo, no la del video crudo",
+    "id": "clip identifier: the processed name that lines up with the window of the TSV",
+    "people_id": "index of the OpenPose candidate inside the clip; in this delivery always 1",
+    "frames_source": "rows the source gave for this clip",
+    "frames_grid": "frame span between the first and the last observed frame (min..max), inclusive",
+    "frames_missing_grid": "gaps inside that range the source did not give, marked as inferred",
+    "n_timed_frames": "frames with a real clock stamp",
+    "n_timestamp_inferred": "frames whose clock was borrowed by short interpolation between two timed frames",
+    "n_missing_timestamps": "frames_grid - n_timed_frames: frames without a clock, where anything temporal is NULL",
+    "t_start": "first known clock of the sequence (seconds of the source frame_timestamp)",
+    "t_end": "last known clock of the sequence",
+    "duration_s": "t_end - t_start; this is the MEASURED duration of the interval, not of the raw video",
 }
 
 MIDE_ANNOTATION = {
-    "indoor_outdoor": "etiqueta del modelo visual: interior o exterior",
-    "show_type": "etiqueta del modelo visual: género del programa (news anchor, weather report, interview, monologue)",
-    "hands_free": "etiqueta del modelo visual: si tiene las manos libres para gesticular",
-    "sitting_standing": "etiqueta del modelo visual: sentado o de pie",
-    "screen_interaction": "etiqueta del modelo visual: si interacciona con una pantalla",
-    "sex": "etiqueta del modelo visual: sexo atribuido a la persona",
-    "age": "edad estimada por el modelo visual, en años",
-    "status": "estado de la llamada al modelo visual para este clip",
-    "error": "texto de error de la anotación; vacio cuando la anotación salió bien",
+    "indoor_outdoor": "visual model label: indoor or outdoor",
+    "show_type": "visual model label: genre of the programme (news anchor, weather report, interview, monologue)",
+    "hands_free": "visual model label: whether the person has their hands free to gesture",
+    "sitting_standing": "visual model label: sitting or standing",
+    "screen_interaction": "visual model label: whether they interact with a screen",
+    "sex": "visual model label: sex assigned to the person by the model",
+    "age": "age estimated by the visual model, in years",
+    "status": "status of the visual model call for this clip",
+    "error": "annotation error text; empty when the annotation came out fine",
 }
 
 MIDE_META = {
-    "newscape_clip_id": "el nombre de clip que produjo el pipeline (raw -> ASD -> OpenPose), tal cual",
-    "tab_context": "campo 7 del TSV de entrada: el contexto que pidió quien hizo la selección",
-    "tab_start_raw": "inicio de la ventana tal como venía en el TSV, sin decodificar",
-    "tab_end_raw": "fin de la ventana tal como venía en el TSV, sin decodificar",
-    "tab_padding_s": "colchón que se añadió a la ventana del TSV para casarla con el clip procesado",
-    "processed_padding_s": "colchón que ya traia el nombre del clip procesado",
-    "id_source": "cómo se emparejó esta fila con el TSV: id exacto o centro de ventana",
-    "datetime_utc": "fecha y hora de emisión del programa en UTC",
-    "country_code": "código de país del programa",
-    "network_code": "código de cadena del programa",
-    "exp_search": "searchterm del TSV: la búsqueda de la que salió este clip",
+    "newscape_clip_id": "the clip name the pipeline produced (raw -> ASD -> OpenPose), verbatim",
+    "tab_context": "field 7 of the input TSV: the context asked for by whoever made the selection",
+    "tab_start_raw": "start of the window as it came in the TSV, undecoded",
+    "tab_end_raw": "end of the window as it came in the TSV, undecoded",
+    "tab_padding_s": "padding added to the TSV window to match it with the processed clip",
+    "processed_padding_s": "padding the processed clip name already carried",
+    "id_source": "how this row was paired with the TSV: exact id or window centre",
+    "datetime_utc": "date and time the programme aired, in UTC",
+    "country_code": "country code of the programme",
+    "network_code": "network code of the programme",
+    "exp_search": "searchterm from the TSV: the search this clip came out of",
 }
 
 MIDE_FRAME = {
-    "formant.1_frequency": "primer formante de la voz en ese fotograma (Hz, Praat)",
-    "formant.2_frequency": "segundo formante de la voz en ese fotograma (Hz, Praat)",
-    "formant.3_frequency": "tercer formante de la voz en ese fotograma (Hz, Praat)",
-    "formant.4_frequency": "cuarto formante de la voz en ese fotograma (Hz, Praat)",
-    "formant.5_frequency": "quinto formante de la voz en ese fotograma (Hz, Praat)",
-    "frame": "número de fotograma dentro del clip",
-    "frame_timestamp": "segundos del frame_timestamp de origen; NULL donde no hay reloj",
-    "source_observed": "la fuente dio este fotograma (falso = hueco rellenado)",
-    "frame_inferred": "este fotograma no estaba en la fuente y se reconstruyó",
-    "clock_known": "este fotograma tiene reloj real",
-    "timestamp_inferred": "el reloj de este fotograma se prestó por interpolación corta",
-    "both_hands_valid": "las dos muñecas son válidas en este fotograma",
-    "pair_separation": "distancia entre las dos muñecas",
-    "pair_angle": "ángulo del vector muñeca izquierda -> muñeca derecha",
-    "centroid_x": "coordenada x del punto medio entre las dos muñecas",
-    "centroid_y": "coordenada y del punto medio entre las dos muñecas",
-    "mirror_error_x": "|x_R + x_L| sobre el eje vertical del cuerpo, fotograma a fotograma",
-    "mirror_error_y": "|y_R - y_L|: diferencia de altura entre las dos manos",
-    "pitch": "tono fundamental de la voz en ese fotograma (Hz, Praat)",
-    "voice_present": "si Praat seguía una pista de pitch en ese fotograma: True medida, False sin pista, "
-                     "NULL si el clip no tiene pista de pitch. Es la puerta que hay que abrir antes de "
-                     "cualquier estadístico de voz (como right_n_speed en las muñecas)",
-    "intensity": "intensidad de la voz en ese fotograma (dB, Praat)",
-    "harmonicity": "relación armónico-ruído de la voz en ese fotograma (Praat)",
-    "vad": "actividad de voz: hay habla en ese fotograma",
-    "words": "palabra activa en ese fotograma segun WhisperX",
-    "openpose_json": "nombre del JSON de OpenPose del que salió esta fila (trazabilidad)",
-    "datetime_utc": "fecha y hora de emisión del programa en UTC",
-    "country_code": "código de país del programa",
-    "network_code": "código de cadena del programa",
-    "exp_search": "searchterm del TSV: la búsqueda de la que salió este clip",
-    "id": "identificador del clip, igual que en final_videos",
-    "people_id": "índice del candidato de OpenPose; en esta entrega siempre 1",
+    "formant.1_frequency": "first formant of the voice in that frame (Hz, Praat)",
+    "formant.2_frequency": "second formant of the voice in that frame (Hz, Praat)",
+    "formant.3_frequency": "third formant of the voice in that frame (Hz, Praat)",
+    "formant.4_frequency": "fourth formant of the voice in that frame (Hz, Praat)",
+    "formant.5_frequency": "fifth formant of the voice in that frame (Hz, Praat)",
+    "frame": "frame number inside the clip",
+    "frame_timestamp": "seconds of the source frame_timestamp; NULL where there is no clock",
+    "source_observed": "the source gave this frame (false = filled gap)",
+    "frame_inferred": "this frame was not in the source and was reconstructed",
+    "clock_known": "this frame has a real clock",
+    "timestamp_inferred": "this frame's clock was borrowed by short interpolation",
+    "both_hands_valid": "both wrists are valid in this frame",
+    "pair_separation": "distance between the two wrists",
+    "pair_angle": "angle of the left wrist -> right wrist vector",
+    "centroid_x": "x coordinate of the midpoint between the two wrists",
+    "centroid_y": "y coordinate of the midpoint between the two wrists",
+    "mirror_error_x": "|x_R + x_L| about the vertical axis of the body, frame by frame",
+    "mirror_error_y": "|y_R - y_L|: height difference between the two hands",
+    "pitch": "fundamental frequency of the voice in that frame (Hz, Praat)",
+    "voice_present": "whether Praat was following a pitch track in that frame: True measured, False no track, "
+                     "NULL if the clip has no pitch track. It is the door to open before any voice "
+                     "statistic (what right_n_speed is for the wrists)",
+    "intensity": "voice intensity in that frame (dB, Praat)",
+    "harmonicity": "harmonics-to-noise ratio of the voice in that frame (Praat)",
+    "vad": "voice activity: there is speech in that frame",
+    "words": "word active in that frame according to WhisperX",
+    "openpose_json": "name of the OpenPose JSON this row came out of (traceability)",
+    "datetime_utc": "date and time the programme aired, in UTC",
+    "country_code": "country code of the programme",
+    "network_code": "network code of the programme",
+    "exp_search": "searchterm from the TSV: the search this clip came out of",
+    "id": "clip identifier, the same as in final_videos",
+    "people_id": "index of the OpenPose candidate; in this delivery always 1",
 }
 
 MIDE_FRAME_MANO = {
-    "nx": "coordenada x cruda del keypoint, normalizada por el cuello",
-    "ny": "coordenada y cruda del keypoint, normalizada por el cuello",
-    "nx_smooth": "coordenada x suavizada (Savitzky-Golay por tramo contiguo)",
-    "ny_smooth": "coordenada y suavizada",
-    "confidence": "confianza que OpenPose asigna a ese keypoint en este fotograma",
-    "observed": "la fuente dio este keypoint en este fotograma",
-    "interpolated": "la coordenada viene de interpolación de un hueco corto",
-    "valid": "la medida es usable en este fotograma: keypoint presente y confianza >= mínimo, o interpolado",
-    "above_neck": "la muñeca esta por encima de la altura del cuello (ny suavizada > 0)",
-    "neck_distance": "distancia de la muñeca al cuello",
-    "neck_angle": "ángulo del vector cuello -> muñeca",
-    "velocity_x": "velocidad de la muñeca en x",
-    "velocity_y": "velocidad de la muñeca en y",
-    "speed": "módulo de la velocidad de la muñeca",
-    "accel_x": "aceleración de la muñeca en x",
-    "accel_y": "aceleración de la muñeca en y",
-    "accel_magnitude": "módulo de la aceleración",
-    "step_distance": "desplazamiento al fotograma anterior del mismo tramo contiguo (no necesita reloj)",
-    "jerk_x": "variación de la aceleración en x",
-    "jerk_y": "variación de la aceleración en y",
-    "jerk_magnitude": "módulo del jerk: lo brusco del cambio de aceleración",
+    "nx": "raw x coordinate of the keypoint, normalised by the neck",
+    "ny": "raw y coordinate of the keypoint, normalised by the neck",
+    "nx_smooth": "smoothed x coordinate (Savitzky-Golay per contiguous run)",
+    "ny_smooth": "smoothed y coordinate",
+    "confidence": "the confidence OpenPose assigns to that keypoint in this frame",
+    "observed": "the source gave this keypoint in this frame",
+    "interpolated": "the coordinate comes from interpolating a short gap",
+    "valid": "the measurement is usable in this frame: keypoint present and confidence >= minimum, or interpolated",
+    "above_neck": "the wrist is above the height of the neck (smoothed ny > 0)",
+    "neck_distance": "distance from the wrist to the neck",
+    "neck_angle": "angle of the neck -> wrist vector",
+    "velocity_x": "wrist velocity in x",
+    "velocity_y": "wrist velocity in y",
+    "speed": "magnitude of the wrist velocity",
+    "accel_x": "wrist acceleration in x",
+    "accel_y": "wrist acceleration in y",
+    "accel_magnitude": "magnitude of the acceleration",
+    "step_distance": "displacement to the previous frame of the same contiguous run (needs no clock)",
+    "jerk_x": "change of acceleration in x",
+    "jerk_y": "change of acceleration in y",
+    "jerk_magnitude": "magnitude of the jerk: how abrupt the change of acceleration is",
 }
 
 STATS = ("min", "p05", "p25", "p50", "p75", "p95", "max", "std")
 
-# Contadores cuya definicion vive en el codigo DENTRO de la nota de otra familia, en
-# vez de tener clave propia. Sin esto quedarian "sin documentar" aunque el codigo si
-# los explique; se enlazan a esa nota para no redactar una segunda version que se
-# pueda desincronizar.
+# Counters whose definition lives in the code INSIDE the note of another family instead of
+# having a key of their own. Without this they would come out "undocumented" even though the
+# code does explain them; they are linked to that note so that nobody writes a second version
+# that can drift out of sync.
 NOTA_DE = {"n_cos_phase": "cos_phase_"}
-MIDE_CONTADORES = {"n_cos_phase": "fotogramas detrás de las cifras de fase: si es pequeño, la fase de ese clip no es un resultado"}
-MIDE_STAT = {"min": "mínimo", "max": "máximo", "std": "desviación típica muestral (ddof=1)",
-             "p05": "percentil 5", "p25": "percentil 25", "p50": "mediana",
-             "p75": "percentil 75", "p95": "percentil 95"}
-NOMBRE_MEDIDA_LARGA = {"accel_magnitude": "aceleración", "jerk_magnitude": "jerk",
-                       "neck_distance": "distancia al cuello", "speed": "velocidad"}
+MIDE_CONTADORES = {"n_cos_phase": "frames behind the phase figures: if it is small, the phase of that clip is not a result"}
+MIDE_STAT = {"min": "minimum", "max": "maximum", "std": "sample standard deviation (ddof=1)",
+             "p05": "5th percentile", "p25": "25th percentile", "p50": "median",
+             "p75": "75th percentile", "p95": "95th percentile"}
+NOMBRE_MEDIDA_LARGA = {"accel_magnitude": "acceleration", "jerk_magnitude": "jerk",
+                       "neck_distance": "distance to the neck", "speed": "speed"}
 
-# Fórmulas y unidades que NO viven en las constantes de unidades del código. Están
-# transcriptas de la función que las calcula (cada fila cita cuál), así que su verdad
-# se comprueba leyendo esa función. Sin esta tabla, ~95 columnas saldrían en el
-# diccionario con la fórmula vacía: el alumno vería "qué mide" pero no "cómo".
+# Formulas and units that do NOT live in the code's unit constants. They are transcribed from
+# the function that computes them (every row names which one), so their truth is checked by
+# reading that function. Without this table, ~95 columns would come out of the dictionary with
+# an empty formula: the student would see "what it measures" but not "how".
 FORMULA_PROPIA = {
-    # --- por fotograma y mano: gesture_features.py: _hand_rows
-    "confidence": ("confianza del keypoint",
-                   "score de confianza de OpenPose para el keypoint de esa muñeca, en [0,1]; no es una probabilidad calibrada",
+    # --- per frame and hand: gesture_features.py: _hand_rows
+    "confidence": ("keypoint confidence",
+                   "confidence score OpenPose gives for the keypoint of that wrist, in [0,1]; it is not a calibrated probability",
                    "gesture_features.py: _hand_rows"),
-    "valid": ("confianza del keypoint",
-              "usable = coordenadas finitas y conf > 0 y conf >= min_keypoint_confidence (0,2 por defecto); valid = usable | interpolado. Si es falsa, todo lo demás de esa mano en este fotograma es NULL",
+    "valid": ("keypoint confidence",
+              "usable = finite coordinates and conf > 0 and conf >= min_keypoint_confidence (0.2 by default); valid = usable | interpolated. If it is false, everything else for that hand in this frame is NULL",
               "gesture_features.py: _hand_rows"),
-    "observed": ("confianza del keypoint",
-                 "usable y la fuente dio este fotograma (no relleno). Difiere de valid exactamente en los fotogramas interpolados",
+    "observed": ("keypoint confidence",
+                 "usable and the source gave this frame (not filled). Differs from valid exactly on the interpolated frames",
                  "gesture_features.py: _hand_rows"),
-    "interpolated": ("confianza del keypoint",
-                     "la coordenada viene de _interpolate_gaps: hueco corto entre dos extremos válidos, nunca en los bordes",
+    "interpolated": ("keypoint confidence",
+                     "the coordinate comes from _interpolate_gaps: a short gap between two valid endpoints, never at the edges",
                      "gesture_features.py: _hand_rows"),
-    "above_neck": ("geometría por fotograma",
-                   "ny_smooth > 0: la muñeca está por encima del cuello. NULL donde no hay coordenada válida",
+    "above_neck": ("per-frame geometry",
+                   "ny_smooth > 0: the wrist is above the neck. NULL where there is no valid coordinate",
                    "gesture_features.py: _hand_rows"),
-    # --- reloj y hueco: gesture_features.py: _sequence_grid
-    "frame": ("identificación y procedencia", "número de fotograma dentro del clip, entero del JSON de OpenPose",
+    # --- clock and span: gesture_features.py: _sequence_grid
+    "frame": ("identification and provenance", "frame number inside the clip, an integer from the OpenPose JSON",
               "gesture_features.py: _sequence_grid"),
     "frame_timestamp": ("time",
-                        "segundos del frame_timestamp de origen; NULL donde no hay reloj. Solo se interpola en huecos cortos internos (timestamp_inferred); los bordes no se extrapolan",
+                        "seconds of the source frame_timestamp; NULL where there is no clock. Only interpolated in short internal gaps (timestamp_inferred); the edges are never extrapolated",
                         "gesture_features.py: _sequence_grid"),
-    "source_observed": ("identificación y procedencia", "la fuente dio este fotograma dentro del hueco observado",
+    "source_observed": ("identification and provenance", "the source gave this frame inside the observed span",
                         "gesture_features.py: _sequence_grid"),
-    "frame_inferred": ("identificación y procedencia", "no estaba en la fuente: hueco interno del rango observado",
+    "frame_inferred": ("identification and provenance", "it was not in the source: internal gap inside the observed range",
                        "gesture_features.py: _sequence_grid"),
-    "clock_known": ("time", "este fotograma tiene reloj real (frame_timestamp finito)",
+    "clock_known": ("time", "this frame has a real clock (finite frame_timestamp)",
                     "gesture_features.py: _sequence_grid"),
-    "timestamp_inferred": ("time", "el reloj viene de prestárselo a un hueco interno de a lo sumo max_gap_frames fotogramas",
+    "timestamp_inferred": ("time", "the clock is borrowed for an internal gap of at most max_gap_frames frames",
                            "gesture_features.py: _sequence_grid"),
-    "both_hands_valid": ("counts and fractions", "right_valid y left_valid en el mismo fotograma: la puerta de todo lo bilateral",
+    "both_hands_valid": ("counts and fractions", "right_valid and left_valid in the same frame: the door of everything bilateral",
                          "gesture_features.py: _sequence_frame_rows"),
-    # --- agregados v1: gesture_features.py: _hand_summary
-    "n_observed": ("counts and fractions", "suma del flag observed de esa mano sobre el hueco observado (unidad: fotogramas)",
+    # --- v1 aggregates: gesture_features.py: _hand_summary
+    "n_observed": ("counts and fractions", "sum of the observed flag of that hand over the observed span (unit: frames)",
                    "gesture_features.py: _hand_summary"),
-    "n_interpolated": ("counts and fractions", "suma del flag interpolated de esa mano (fotogramas)",
+    "n_interpolated": ("counts and fractions", "sum of the interpolated flag of that hand (frames)",
                        "gesture_features.py: _hand_summary"),
-    "n_valid": ("counts and fractions", "suma del flag valid de esa mano: el denominador real de sus medidas",
+    "n_valid": ("counts and fractions", "sum of the valid flag of that hand: the real denominator of its measurements",
                 "gesture_features.py: _hand_summary"),
-    "frac_observed": ("counts and fractions", "n_observed / frames_grid, adimensional",
+    "frac_observed": ("counts and fractions", "n_observed / frames_grid, dimensionless",
                       "gesture_features.py: _hand_summary"),
-    "frac_interpolated": ("counts and fractions", "n_interpolated / frames_grid, adimensional",
+    "frac_interpolated": ("counts and fractions", "n_interpolated / frames_grid, dimensionless",
                           "gesture_features.py: _hand_summary"),
-    "frac_valid": ("counts and fractions", "n_valid / frames_grid, adimensional",
+    "frac_valid": ("counts and fractions", "n_valid / frames_grid, dimensionless",
                    "gesture_features.py: _hand_summary"),
-    "mean_speed": ("velocity", "np.mean sobre los speed finitos del clip, en unidades de cuello por segundo",
+    "mean_speed": ("velocity", "np.mean over the finite speed values of the clip, in neck units per second",
                    "gesture_features.py: _hand_summary"),
-    "max_speed": ("velocity", "np.max de los speed finitos: lo define un solo fotograma, no es robusto a cortes de plano",
+    "max_speed": ("velocity", "np.max of the finite speed values: a single frame defines it, it is not robust to shot cuts",
                   "gesture_features.py: _hand_summary"),
-    "mean_accel_magnitude": ("acceleration", "np.mean de accel_magnitude finito, en unidades de cuello por segundo al cuadrado",
+    "mean_accel_magnitude": ("acceleration", "np.mean of finite accel_magnitude, in neck units per second squared",
                              "gesture_features.py: _hand_summary"),
-    "max_accel_magnitude": ("acceleration", "np.max de accel_magnitude finito", "gesture_features.py: _hand_summary"),
-    "mean_neck_distance": ("distances", "np.mean de neck_distance finito, en unidades de cuello",
+    "max_accel_magnitude": ("acceleration", "np.max of finite accel_magnitude", "gesture_features.py: _hand_summary"),
+    "mean_neck_distance": ("distances", "np.mean of finite neck_distance, in neck units",
                            "gesture_features.py: _hand_summary"),
-    "early_speed_mean": ("velocity", "media de speed en el primer 10% del hueco [t_start, t_end] de reloj conocido",
+    "early_speed_mean": ("velocity", "mean of speed in the first 10% of the [t_start, t_end] span of known clock",
                          "gesture_features.py: _edge_window_mean"),
-    "late_speed_mean": ("velocity", "media de speed en el último 10% del hueco [t_start, t_end] de reloj conocido",
+    "late_speed_mean": ("velocity", "mean of speed in the last 10% of the [t_start, t_end] span of known clock",
                         "gesture_features.py: _edge_window_mean"),
     # --- bilateral v1: gesture_features.py: _sequence_summary
-    "n_both_hands": ("counts and fractions", "suma de both_hands_valid (fotogramas)",
+    "n_both_hands": ("counts and fractions", "sum of both_hands_valid (frames)",
                      "gesture_features.py: _sequence_summary"),
-    "frac_both_hands": ("counts and fractions", "n_both_hands / frames_grid, adimensional",
+    "frac_both_hands": ("counts and fractions", "n_both_hands / frames_grid, dimensionless",
                         "gesture_features.py: _sequence_summary"),
-    "mean_pair_separation": ("distances", "np.mean de pair_separation = hipot(nx_R - nx_L, ny_R - ny_L) suavizadas, en unidades de cuello",
+    "mean_pair_separation": ("distances", "np.mean of pair_separation = hipot(nx_R - nx_L, ny_R - ny_L) of the smoothed coordinates, in neck units",
                              "gesture_features.py: _sequence_summary"),
-    "max_pair_separation": ("distances", "np.max de pair_separation", "gesture_features.py: _sequence_summary"),
+    "max_pair_separation": ("distances", "np.max of pair_separation", "gesture_features.py: _sequence_summary"),
     "mean_mirror_error_x": ("distances",
-                            "np.mean de |nx_R + nx_L|: con X centrada en el cuello, una pareja simétrica da ~0; crece si las dos manos se van al mismo lado",
+                            "np.mean of |nx_R + nx_L|: with X centred on the neck, a symmetric pair gives ~0; it grows when both hands go to the same side",
                             "gesture_features.py: _sequence_summary"),
-    "mean_mirror_error_y": ("distances", "np.mean de |ny_R - ny_L|: diferencia de altura entre las dos manos",
+    "mean_mirror_error_y": ("distances", "np.mean of |ny_R - ny_L|: height difference between the two hands",
                             "gesture_features.py: _sequence_summary"),
-    # --- procedencia de la secuencia: gesture_features.py: _sequence_summary
-    "frames_source": ("identificación y procedencia", "cuántos fotogramas del hueco trajeron fila de la fuente (suma de source_observed)",
+    # --- provenance of the sequence: gesture_features.py: _sequence_summary
+    "frames_source": ("identification and provenance", "how many frames of the span brought a row from the source (sum of source_observed)",
                       "gesture_features.py: _sequence_summary"),
-    "frames_grid": ("identificación y procedencia",
-                    "tamaño del hueco min(frame)..max(frame) inclusive: el denominador de todos los frac_*",
+    "frames_grid": ("identification and provenance",
+                    "size of the span min(frame)..max(frame) inclusive: the denominator of every frac_*",
                     "gesture_features.py: _sequence_grid"),
-    "frames_missing_grid": ("identificación y procedencia", "suma de frame_inferred: huecos internos sin fila de la fuente",
+    "frames_missing_grid": ("identification and provenance", "sum of frame_inferred: internal gaps with no row from the source",
                             "gesture_features.py: _sequence_summary"),
-    "n_timed_frames": ("time", "suma de clock_known: fotogramas con reloj real", "gesture_features.py: _sequence_summary"),
-    "n_timestamp_inferred": ("time", "suma de timestamp_inferred: fotogramas con reloj prestado",
+    "n_timed_frames": ("time", "sum of clock_known: frames with a real clock", "gesture_features.py: _sequence_summary"),
+    "n_timestamp_inferred": ("time", "sum of timestamp_inferred: frames with a borrowed clock",
                              "gesture_features.py: _sequence_summary"),
-    "n_missing_timestamps": ("time", "frames_grid - n_timed_frames: fotogramas sin reloj",
+    "n_missing_timestamps": ("time", "frames_grid - n_timed_frames: frames without a clock",
                              "gesture_features.py: _sequence_summary"),
-    # --- voz: la produce el stage de voz (parole), NO la matemática de muñecas. Las cotas
-    # del análisis son fijas y están en extract_prosody.praat: pitch 60-600 Hz, formantes
-    # hasta 5500 Hz, suelo del Harmonicity (cc) en -200 dB. Cualquier valor FUERA de esas
-    # cotas no lo produjo Praat: delata la cadena antigua (una spline para toda la pista y
-    # centinela pitch<10 -> 0). El regimen de cada entrega se MIDE, no se supone.
-    "pitch": ("voz (Praat)",
-              "tono fundamental en Hz. Cota del análisis: 60-600 Hz (Praat To Pitch, paso 0,001 s). Praat marca el silencio con el candidato 'mute' (frequency = 0), que en la cadena actual sale como NULL y no como 0 Hz. Un valor fuera de 60-600 no lo pudo producir Praat",
+    # --- voice: produced by the voice stage (parole), NOT by the wrist maths. The bounds of
+    # the analysis are fixed and live in extract_prosody.praat: pitch 60-600 Hz, formants up
+    # to 5500 Hz, floor of Harmonicity (cc) at -200 dB. Any value OUTSIDE those bounds was not
+    # produced by Praat: it betrays the old chain (one spline over the whole track plus the
+    # pitch<10 -> 0 sentinel). The regime of each delivery is MEASURED, not assumed.
+    "pitch": ("voice (Praat)",
+              "fundamental frequency in Hz. Analysis bound: 60-600 Hz (Praat To Pitch, step 0.001 s). Praat marks silence with the 'mute' candidate (frequency = 0), which in the current chain comes out as NULL and not as 0 Hz. A value outside 60-600 could not have been produced by Praat",
               "create_datasets/parole/scripts/prosody_align.R: align_track"),
-    "intensity": ("voz (Praat)",
-                  "intensidad en dB (Praat To Intensity: min pitch 75 Hz, paso 0,001 s). Praat la sigue midiendo durante el silencio, así que esta columna casi no tiene huecos: no la uses como índice de voz, para eso está voice_present",
+    "intensity": ("voice (Praat)",
+                  "intensity in dB (Praat To Intensity: min pitch 75 Hz, step 0.001 s). Praat keeps measuring it during silence, so this column has almost no gaps: do not use it as a voice indicator, that is what voice_present is for",
                   "create_datasets/parole/scripts/prosody_align.R: align_track"),
-    "harmonicity": ("voz (Praat)",
-                    "relación armónico-ruído en dB (Praat To Harmonicity (cc): paso 0,01 s, desde 75 Hz). Los valores negativos son normales (más ruido que armónicos) y el suelo del método es -200 dB: en silencio vale -200. Lo que no existe es un valor POR DEBAJO de -200",
+    "harmonicity": ("voice (Praat)",
+                    "harmonics-to-noise ratio in dB (Praat To Harmonicity (cc): step 0.01 s, from 75 Hz). Negative values are normal (more noise than harmonics) and the floor of the method is -200 dB: in silence it is -200. What does not exist is a value BELOW -200",
                     "create_datasets/parole/scripts/prosody_align.R: align_track"),
-    "formant.1_frequency": ("voz (Praat)",
-                            "primer formante en Hz (Praat To Formant (burg): paso 0,001 s, 5 formantes con techo 5500 Hz). Toda frecuencia fuera de 0-5500 Hz es imposible: no es un valor raro, es otra cadena de procesado",
+    "formant.1_frequency": ("voice (Praat)",
+                            "first formant in Hz (Praat To Formant (burg): step 0.001 s, 5 formants with a 5500 Hz ceiling). Any frequency outside 0-5500 Hz is impossible: that is not a rare value, it is a different processing chain",
                             "create_datasets/parole/scripts/prosody_align.R: align_track"),
-    "formant.2_frequency": ("voz (Praat)", "segundo formante en Hz (misma extracción y mismas cotas que formant.1_frequency)",
+    "formant.2_frequency": ("voice (Praat)", "second formant in Hz (same extraction and same bounds as formant.1_frequency)",
                             "create_datasets/parole/scripts/prosody_align.R: align_track"),
-    "formant.3_frequency": ("voz (Praat)", "tercer formante en Hz (misma extracción y mismas cotas que formant.1_frequency)",
+    "formant.3_frequency": ("voice (Praat)", "third formant in Hz (same extraction and same bounds as formant.1_frequency)",
                             "create_datasets/parole/scripts/prosody_align.R: align_track"),
-    "formant.4_frequency": ("voz (Praat)", "cuarto formante en Hz (misma extracción y mismas cotas que formant.1_frequency)",
+    "formant.4_frequency": ("voice (Praat)", "fourth formant in Hz (same extraction and same bounds as formant.1_frequency)",
                             "create_datasets/parole/scripts/prosody_align.R: align_track"),
-    "formant.5_frequency": ("voz (Praat)", "quinto formante en Hz (misma extracción y mismas cotas que formant.1_frequency)",
+    "formant.5_frequency": ("voice (Praat)", "fifth formant in Hz (same extraction and same bounds as formant.1_frequency)",
                             "create_datasets/parole/scripts/prosody_align.R: align_track"),
-    "voice_present": ("voz (Praat)",
-                      "TRUE solo donde Praat seguía una pista de pitch real en ese fotograma, FALSE donde no la había, NULL si el clip no tiene pista de pitch. Es la puerta que hay que abrir antes de cualquier estadístico de voz, y el equivalente a right_n_speed en las muñecas: sin ella, NULL, silencio y valor interpolado visten igual",
-                      "create_datasets/parole/scripts/process_prosody.R: voice_present = !is.na(pitch) alineada por tramos"),
-    "vad": ("voz (Praat)",
-            "actividad de voz por fotograma, de los segmentos de Silero VAD: es lo único de la voz que es una detección y no un muestreo de una pista. Publica como booleana (medido: BOOLEAN en las tres bases del corpus, con valor en ~99 % de los fotogramas). Si en algún lote llegara entera, el constructor la castea a booleana antes de publicar",
+    "voice_present": ("voice (Praat)",
+                      "TRUE only where Praat was following a real pitch track in that frame, FALSE where there was none, NULL if the clip has no pitch track. It is the door to open before any voice statistic, and the equivalent of right_n_speed for the wrists: without it, NULL, silence and an interpolated value all dress the same",
+                      "create_datasets/parole/scripts/process_prosody.R: voice_present = !is.na(pitch) aligned per run"),
+    "vad": ("voice (Praat)",
+            "voice activity per frame, from the Silero VAD segments: it is the only voice column that is a detection and not a sampling of a track. Published as a boolean (measured: BOOLEAN in the three bases of the corpus, with a value in ~99% of the frames). If some lot ever arrived whole, the constructor casts it to boolean before publishing",
             "create_datasets/parole/scripts/silero_vad_runner.py via parole.sh"),
-    "words": ("voz (Praat)",
-              "palabra activa en ese fotograma según WhisperX con las marcas alineadas al video. NULL donde no hay palabra transcrita: aquí NULL sí significa silencio real",
+    "words": ("voice (Praat)",
+              "word active in that frame according to WhisperX with the timings aligned to the video. NULL where there is no transcribed word: here NULL really does mean silence",
               "apate.py (whisperx + framer)"),
-    # --- anotaciones visuales: las escribe theia.py, no se miden sobre el video
-    "indoor_outdoor": ("anotación visual",
-                       "etiqueta del modelo visual a partir de frames del video RAW, en {indoor, outdoor}. Son dos llamadas por video: esta es la de escena. NULL si la llamada fallo",
+    # --- visual annotations: theia.py writes these, they are not measured over the video
+    "indoor_outdoor": ("visual annotation",
+                       "label from the visual model over frames of the RAW video, in {indoor, outdoor}. These are two calls per video: this is the scene one. NULL if the call failed",
                        "theia.py: SCENE_FIELDS + ENUMS"),
-    "show_type": ("anotación visual",
-                  "etiqueta de género del programa en {news anchor, monologue, weather report, interview}; el vocabulario es cerrado, el modelo no puede inventar otra clase",
+    "show_type": ("visual annotation",
+                  "programme genre label in {news anchor, monologue, weather report, interview}; the vocabulary is closed, the model cannot invent another class",
                   "theia.py: SCENE_FIELDS + ENUMS"),
-    "hands_free": ("anotación visual",
-                   "BOOLEANO: el modelo entiende que la persona tiene las manos libres para gesticular. Sale de la llamada de hablante (frames MASKED + RAW) y se normaliza desde true/yes/si/1",
+    "hands_free": ("visual annotation",
+                   "BOOLEAN: the model understands that the person has their hands free to gesture. It comes from the speaker call (MASKED + RAW frames) and is normalised from true/yes/si/1",
                    "theia.py: SPEAKER_FIELDS + TRUEISH/FALSEISH"),
-    "sitting_standing": ("anotación visual",
-                         "etiqueta en {sitting, standing} de la llamada de hablante. Sirve para estratificar: un presentador sentado gesticula distinto de uno de pie",
+    "sitting_standing": ("visual annotation",
+                         "label in {sitting, standing} from the speaker call. Useful for stratifying: a seated presenter gestures differently from a standing one",
                          "theia.py: SPEAKER_FIELDS + ENUMS"),
-    "screen_interaction": ("anotación visual",
-                           "BOOLEANO: interacciona con una pantalla, la misma normalizacion que hands_free. En este lote solo 3 de 29 clips dicen que si",
+    "screen_interaction": ("visual annotation",
+                           "BOOLEAN: interacts with a screen, the same normalisation as hands_free. In this lot only 3 of 29 clips say yes",
                            "theia.py: SPEAKER_FIELDS + TRUEISH/FALSEISH"),
-    "sex": ("anotación visual",
-            "etiqueta en {male, female} de la llamada de hablante: asignacion del modelo, no una variable registrada",
+    "sex": ("visual annotation",
+            "label in {male, female} from the speaker call: an assignment by the model, not a registered variable",
             "theia.py: SPEAKER_FIELDS + ENUMS"),
-    "age": ("anotación visual",
-            "edad estimada en años, entero validado en [0, 120]. Ojo: el modelo da números redondos; sirve para estratificar, no como edad real",
+    "age": ("visual annotation",
+            "estimated age in years, an integer validated in [0, 120]. Careful: the model gives round numbers; useful for stratifying, not as a real age",
             "theia.py: SPEAKER_FIELDS + AGE_RANGE"),
-    # --- identificación, ventana y metadatos: final_dataset.py
-    "id": ("identificación y procedencia",
-           "clave de clip, reconstruida desde el nombre procesado y casada con la ventana del TSV; es la única unión entre las dos tablas",
+    # --- identification, window and metadata: final_dataset.py
+    "id": ("identification and provenance",
+           "clip key, rebuilt from the processed name and matched with the TSV window; it is the only join between the two tables",
            "final_dataset.py: parse_clip_id / match_tab_to_clips"),
-    "people_id": ("identificación y procedencia",
-                  "índice del candidato de OpenPose dentro del clip (person_index del JSON, sin tracking entre fotogramas)",
+    "people_id": ("identification and provenance",
+                  "index of the OpenPose candidate inside the clip (person_index of the JSON, no tracking across frames)",
                   "final_dataset.py: load_frame_metadata"),
-    "newscape_clip_id": ("identificación y procedencia", "nombre exacto del clip que produjo el pipeline",
+    "newscape_clip_id": ("identification and provenance", "the exact clip name the pipeline produced",
                          "final_dataset.py: parse_clip_id"),
-    "tab_context": ("identificación y procedencia", "campo 7 del TSV de entrada, literal",
+    "tab_context": ("identification and provenance", "field 7 of the input TSV, literal",
                     "final_dataset.py: read_tab"),
-    "tab_start_raw": ("identificación y procedencia",
-                      "inicio de ventana tal como venía en el TSV. Recuerda el divisor: msec se divide por 1000 si el programa empieza por 2017, por 100 en el resto",
+    "tab_start_raw": ("identification and provenance",
+                      "window start as it came in the TSV. Remember the divisor: msec is divided by 1000 if the programme starts with 2017, by 100 otherwise",
                       "final_dataset.py: fractional_divisor / read_tab"),
-    "tab_end_raw": ("identificación y procedencia", "fin de ventana tal como venía en el TSV, con el mismo divisor",
+    "tab_end_raw": ("identification and provenance", "window end as it came in the TSV, with the same divisor",
                     "final_dataset.py: fractional_divisor / read_tab"),
-    "tab_padding_s": ("identificación y procedencia",
-                      "colchón añadido a la ventana del TSV para casarla. No es una constante universal: depende del lote (las entregas con ids ya procesados usan 2,5 s)",
+    "tab_padding_s": ("identification and provenance",
+                      "padding added to the TSV window to match it. Not a universal constant: it depends on the lot (deliveries with already processed ids use 2.5 s)",
                       "final_dataset.py: clip_window"),
-    "processed_padding_s": ("identificación y procedencia", "colchón que ya traía el nombre del clip procesado",
+    "processed_padding_s": ("identification and provenance", "padding the processed clip name already carried",
                             "final_dataset.py: parse_clip_id"),
-    "id_source": ("identificación y procedencia",
-                  "cómo se emparejó la fila: id exacto o centro de ventana. Conviene no mezclar los dos en un mismo análisis",
+    "id_source": ("identification and provenance",
+                  "how the row was paired: exact id or window centre. Best not to mix the two in one analysis",
                   "final_dataset.py: match_tab_to_clips"),
-    "status": ("anotación visual", "estado de la llamada al modelo visual para este clip",
+    "status": ("visual annotation", "status of the visual model call for this clip",
                "final_dataset.py: load_annotations"),
-    "error": ("anotación visual",
-              "texto de error; VACÍO (no NULL) cuando la anotación salió bien. Contar los OK exige mirar la cadena vacía",
+    "error": ("visual annotation",
+              "error text; EMPTY (not NULL) when the annotation came out fine. Counting the OKs means looking at the empty string",
               "final_dataset.py: load_annotations"),
-    "openpose_json": ("identificación y procedencia",
-                      "nombre del JSON de OpenPose del que salió la fila. program_name y time_range son ese mismo nombre, no metadata del programa",
+    "openpose_json": ("identification and provenance",
+                      "name of the OpenPose JSON the row came out of. program_name and time_range are that same name, not programme metadata",
                       "final_dataset.py: load_frame_metadata"),
-    "datetime_utc": ("identificación y procedencia", "fecha y hora de emisión del programa, en UTC",
+    "datetime_utc": ("identification and provenance", "date and time the programme aired, in UTC",
                      "final_dataset.py: load_frame_metadata"),
-    "country_code": ("identificación y procedencia", "código de país del programa, tal como lo da NewsScape",
+    "country_code": ("identification and provenance", "country code of the programme, as NewsScape gives it",
                      "final_dataset.py: load_frame_metadata"),
-    "network_code": ("identificación y procedencia", "código de cadena del programa", "final_dataset.py: load_frame_metadata"),
-    "exp_search": ("identificación y procedencia", "searchterm del TSV: la búsqueda de la que salió este clip",
+    "network_code": ("identification and provenance", "network code of the programme", "final_dataset.py: load_frame_metadata"),
+    "exp_search": ("identification and provenance", "searchterm from the TSV: the search this clip came out of",
                    "final_dataset.py: read_tab"),
 }
 
 
 def tabla_desde_codigo(gf):
-    """Las definiciones leidas de las constantes de gf, en tres niveles de precisión.
+    """The definitions read from gf's constants, at three levels of precision.
 
-    Las claves de FEATURE_UNITS y EXTENDED_FEATURE_UNITS llevan entre parentesis la
-    lista de medidas a las que se aplican; ahí esta la fórmula real. Se separan en
-    `exactos` (el nombre completo de una medida), `prefijos` (`cos_phase_*`) y
-    `sufijos` (`*_p95`). La resolución prueba exacto, luego prefijo más largo, luego
-    sufijo: asi la definición especifica de `mirror_error_x_std` no queda tapada por
-    la familia general `mirror_error_*`.
+    The keys of FEATURE_UNITS and EXTENDED_FEATURE_UNITS carry the list of measures they
+    apply to in parentheses; that is where the real formula is. They are split into
+    `exactos` (the full name of a measure), `prefijos` (`cos_phase_*`) and `sufijos`
+    (`*_p95`). Resolution tries exact first, then the longest prefix, then a suffix: that
+    way the specific definition of `mirror_error_x_std` is not covered by the general
+    family `mirror_error_*`.
     """
     exactos, prefijos, sufijos = {}, [], []
 
@@ -450,9 +450,9 @@ def _limpiar(texto):
 
 
 def resolver(tabla, columna, gf, codigo):
-    """Una fila del diccionario, o None si no hay forma honesta de documentarla."""
+    """One row of the dictionary, or None if there is no honest way to document it."""
     exactos, prefijos, sufijos = codigo
-    ambito, base = "clip" if tabla == "final_videos" else "fotograma", columna
+    ambito, base = "clip" if tabla == "final_videos" else "frame", columna
     for prefijo, nombre in TABLA_MANO.items():
         if columna.startswith(prefijo + "_"):
             ambito, base = nombre, columna[len(prefijo) + 1:]
@@ -467,8 +467,8 @@ def resolver(tabla, columna, gf, codigo):
         if sufijo is not None:
             medida, estadistico = base.rsplit("_", 1)
             definicion = sufijo
-            mides = (f"{MIDE_STAT[estadistico]} de {NOMBRE_MEDIDA_LARGA.get(medida, medida)} "
-                     "en el clip, sobre los valores finitos de esa medida")
+            mides = (f"{MIDE_STAT[estadistico]} of {NOMBRE_MEDIDA_LARGA.get(medida, medida)} "
+                     "in the clip, over the finite values of that measure")
     if definicion is not None:
         familia, formula = _limpiar(definicion[0]), _limpiar(definicion[1])
     elif base in FORMULA_PROPIA:
@@ -485,8 +485,8 @@ def resolver(tabla, columna, gf, codigo):
 
     fuente = ("gesture_features.py: FEATURE_UNITS/EXTENDED_FEATURE_UNITS" if formula else
               "gesture_features.py: _hand_summary/_sequence_summary")
-    # Precedencia de la fuente: la cita concreta manda sobre la genérica. Sin este
-    # orden, `frames_grid` perdía _sequence_grid y quedaba en _sequence_summary.
+    # Source precedence: the specific citation wins over the generic one. Without this
+    # order, `frames_grid` lost _sequence_grid and ended up in _sequence_summary.
     if base in FORMULA_PROPIA:
         fuente = FORMULA_PROPIA[base][2]
     elif base in MIDE_META or base in MIDE_ANNOTATION:
@@ -496,12 +496,12 @@ def resolver(tabla, columna, gf, codigo):
     elif tabla == "final_frames" and (base in MIDE_FRAME_MANO or base in MIDE_FRAME):
         fuente = "gesture_features.py: FRAME_COLUMNS"
     return {"tabla": tabla, "columna": columna, "ambito": ambito,
-            "familia": familia or "identificación y procedencia",
+            "familia": familia or "identification and provenance",
             "que_mide": mides, "formula_unidades": formula or "", "fuente": fuente}
 
 
 def cubrir(df, fila):
-    """Cuántos datos reales hay en esa columna, en ESTE lote."""
+    """How much real data that column carries, in THIS lot."""
     serie = df[fila["columna"]]
     fila["no_nulos"] = int(serie.notna().sum())
     fila["pct_no_nulos"] = round(100.0 * fila["no_nulos"] / len(df), 1)
@@ -520,7 +520,7 @@ def generar(ruta_final, polymnia_root):
     try:
         import gesture_features as gf
     except ImportError as exc:
-        raise SystemExit(f"no puedo importar gesture_features desde {polymnia_root}: {exc}")
+        raise SystemExit(f"cannot import gesture_features from {polymnia_root}: {exc}")
     codigo = tabla_desde_codigo(gf)
 
     manifiesto = {}
@@ -542,14 +542,14 @@ def generar(ruta_final, polymnia_root):
                 continue
             filas.append(cubrir(df, {**fila, "filas_tabla": len(df)}))
     if pendientes:
-        raise SystemExit("columnas sin documentar (anadelas a las tablas MIDE, no las "
-                         "inventeis aquí): " + ", ".join(pendientes))
+        raise SystemExit("undocumented columns (add them to the MIDE tables, do not "
+                         "invent them here): " + ", ".join(pendientes))
 
     informe = {
         "feature_version": manifiesto.get("features", {}).get("version"),
         "extendidas": manifiesto.get("features", {}).get("extended"),
-        # Datos de la portada del README. Del manifiesto de la pasada de medicion, que es el
-        # mismo manifiesto que se publica: el pipeline compara los parquet antes de fiarse.
+        # Data for the README cover. From the manifest of the measurement pass, which is the
+        # same manifest that gets published: the pipeline compares the parquets before trusting.
         "fecha": manifiesto.get("generated_at"),
         "padding_s": (manifiesto.get("clip_id_mapping") or {}).get("requested_padding_s"),
         "searchterm": (manifiesto.get("clip_id_mapping") or {}).get("searchterm"),
@@ -561,7 +561,7 @@ def generar(ruta_final, polymnia_root):
     return pd.DataFrame(filas), informe
 
 
-ORDEN_FAMILIAS = ("identificación y procedencia", "coordinates", "distances", "velocity",
+ORDEN_FAMILIAS = ("identification and provenance", "coordinates", "distances", "velocity",
                   "acceleration", "angles", "time", "counts and fractions", "NULL",
                   "distribution aggregates", "extent", "reversals", "hull_area", "ellipse_area",
                   "bbox_area", "scale-free intra-clip ratios", "shape of the speed distribution",
@@ -577,58 +577,59 @@ def _familia_de_orden(familia):
 
 
 def _portada(diccionario, informe):
-    """La cabecera que convierte el documento en README de una entrega concreta.
+    """The header that turns the document into the README of one concrete delivery.
 
-    Solo los numeros medidos: filas y columnas salen del parquet, version y padding del
-    manifiesto. No hay ni una cifra de otra tanda, que es como nacio el problema.
+    Only the measured numbers: rows and columns come from the parquet, version and padding from
+    the manifest. There is not a single figure from another batch, which is how this whole
+    problem was born.
     """
     lineas = [
-        "> **README de la entrega.** Va junto a `final_videos.parquet` y `final_frames.parquet`: "
-        "es la documentación de las dos tablas que tienes delante, columna por columna.",
+        "> **README of the delivery.** It ships next to `final_videos.parquet` and `final_frames.parquet`: "
+        "it is the documentation of the two tables in front of you, column by column.",
         "",
-        "| dato de esta entrega | valor |",
+        "| data about this delivery | value |",
         "|---|---|",
     ]
     for tabla in ("final_videos", "final_frames"):
         sub = diccionario[diccionario["tabla"] == tabla]
         if sub.empty:
             continue
-        granos = "clips" if int(sub["filas_tabla"].iloc[0]) < 1000 else "filas"
+        granos = "clips" if int(sub["filas_tabla"].iloc[0]) < 1000 else "rows"
         if tabla == "final_frames":
-            granos = "fotogramas"
+            granos = "frames"
         lineas.append(f"| `{tabla}` | {int(sub['filas_tabla'].iloc[0])} {granos} x "
-                      f"{len(sub)} columnas |")
-    extendidas = "incluido" if informe["extendidas"] else "no incluido"
-    lineas.append(f"| versión de features | {informe['feature_version']} "
-                  f"(bloque extendido: {extendidas}) |")
+                      f"{len(sub)} columns |")
+    extendidas = "included" if informe["extendidas"] else "not included"
+    lineas.append(f"| features version | {informe['feature_version']} "
+                  f"(extended block: {extendidas}) |")
     if informe.get("padding_s") is not None:
         extra = f", searchterm `{informe['searchterm']}`" if informe.get("searchterm") else ""
-        lineas.append(f"| padding de la ventana | {informe['padding_s']} s{extra} |")
+        lineas.append(f"| window padding | {informe['padding_s']} s{extra} |")
     if informe.get("fecha"):
-        lineas.append(f"| generado | {informe['fecha']} |")
+        lineas.append(f"| generated | {informe['fecha']} |")
     lineas += [
         "",
-        "Este documento **se genera**, no se escribe: sale del manifiesto, de las constantes de "
-        "`gesture_features.py` y del propio parquet. Cada cifra de cobertura es de ESTA entrega. "
-        "Si quieres cambiar el texto, se cambia el generador y se regenera. La fecha de arriba es "
-        "la del manifiesto con el que se calculó esta cobertura.",
+        "This document **is generated**, not written: it comes out of the manifest, of the "
+        "constants of `gesture_features.py` and of the parquet itself. Every coverage figure here "
+        "belongs to THIS delivery. If you want to change the text, you change the generator and "
+        "regenerate. The date above is that of the manifest this coverage was computed with.",
         "",
     ]
     return lineas
 
 
 def muestra_de_ejemplos(ruta_final):
-    """Lo que el documento afirma sobre el lote, medido sobre el parquet entregado."""
+    """What the document claims about the lot, measured over the delivered parquet."""
     clips = frames = 0
     sustento, clip_max, max_speed = None, None, None
     ruta = os.path.join(ruta_final, "final_videos.parquet")
     if os.path.isfile(ruta):
         videos = pd.read_parquet(ruta)
         clips = len(videos)
-        # El bloque extendido es opcional: una entrega FEATURE_VERSION 2 no tiene
-        # n_speed ni max por mano, y el README no puede petar ni escribir "0 de 29"
-        # por leer columnas que no existen. Se mide lo que haya, y si no esta, se
-        # dice que no está en vez de inventar un número.
+        # The extended block is optional: a FEATURE_VERSION 2 delivery has no n_speed and no
+        # per-hand max, and the README cannot crash or write "0 of 29" for reading columns that
+        # do not exist. Whatever is there gets measured, and if it is not there, that is what it
+        # says instead of inventing a number.
         if {"right_n_speed", "left_n_speed"} <= set(videos.columns):
             sustento = int(((videos.right_n_speed >= 30) & (videos.left_n_speed >= 30)).sum())
         if {"id", "right_max_speed"} <= set(videos.columns) and videos.right_max_speed.notna().any():
@@ -644,61 +645,61 @@ def muestra_de_ejemplos(ruta_final):
 
 
 def escribir_markdown(diccionario, informe, ruta, muestra_ejemplos, portada=False):
-    """El documento que se le da a la clase."""
-    lineas = ["# Qué es cada columna de este dataset", ""]
+    """The document that gets handed to the class."""
+    lineas = ["# What every column of this dataset is", ""]
     if portada:
         lineas += _portada(diccionario, informe)
     clips = muestra_ejemplos["clips"]
     frames = muestra_ejemplos["frames"]
     lineas += [
-        "Dos tablas, una fila cada una. `final_videos` tiene **una fila por clip** "
-        f"({clips} clips aquí): cada clip es una persona (`people_id`) dentro de un recorte de "
-        "televisión. `final_frames` tiene **una fila por fotograma** de cada clip "
-        f"({frames} filas), y es donde esta la serie temporal y la voz.",
+        "Two tables, one row each. `final_videos` has **one row per clip** "
+        f"({clips} clips here): each clip is one person (`people_id`) inside a television clip. "
+        "`final_frames` has **one row per frame** of each clip "
+        f"({frames} rows), and that is where the time series and the voice live.",
         "",
-        "## Las dos unidades del dataset",
+        "## The two units of the dataset",
         "",
-        "- **Tiempo**: segundos del `frame_timestamp` de origen. Nada asume 30 fps.",
-        "- **Espacio**: *unidades de cuello*. El origen es el cuello (BODY_25 punto 1) y las "
-        "coordenadas están normalizadas por el hombro. **No son metros y no se pueden convertir**: "
-        "no hay escala metrica en los datos. Por eso `mean_speed = 3` significa 'tres veces la "
-        "distancia cuello-hombro por segundo', y solo es comparable con otros números del "
-        "mismo dataset.",
-        "- Angulos en radianes. Áreas en unidades de cuello al cuadrado.",
+        "- **Time**: seconds of the source `frame_timestamp`. Nothing assumes 30 fps.",
+        "- **Space**: *neck units*. The origin is the neck (BODY_25 point 1) and the coordinates "
+        "are normalised by the shoulder. **These are not metres and they cannot be converted**: "
+        "there is no metric scale in the data. That is why `mean_speed = 3` means 'three times the "
+        "neck-to-shoulder distance per second', and it is only comparable with other numbers of the "
+        "same dataset.",
+        "- Angles in radians. Areas in neck units squared.",
         "",
-        "## NULL no es cero",
+        "## NULL is not zero",
         "",
-        "Un NULL significa **no medido**: el keypoint no estaba, tenia confianza insuficiente, o "
-        "habia demasiadas pocas muestras detrás. Un 0 significa medido y cero. Y un estadistico con "
-        "pocas muestras no es un resultado pequeño, es ruido con decimales.",
+        "A NULL means **not measured**: the keypoint was absent, its confidence was too low, or "
+        "there were too few samples behind it. A 0 means measured and zero. And a statistic with few "
+        "samples is not a small result, it is noise with decimals.",
         "",
-        f"El código aplica dos constantes, declaradas en el manifiesto: umbral de movimiento "
-        f"**{informe['umbral_movimiento']} unidades de cuello/s** (por debajo de ahí una mano cuenta "
-        f"como quieta y no se le cuentan cambios de sentido) y suelo de **{informe['suelo_muestras']} "
-        "muestras** para publicar un percentil o una media agregada.",
+        f"The code applies two constants, declared in the manifest: a movement threshold of "
+        f"**{informe['umbral_movimiento']} neck units/s** (below that a hand counts as still and its "
+        f"direction changes are not counted) and a floor of **{informe['suelo_muestras']} "
+        "samples** to publish a percentile or an aggregated mean.",
         "",
-        "**Antes de usar un estadistico, mira su contador.** Van en la misma fila:",
+        "**Before using a statistic, look at its counter.** They live in the same row:",
         "",
-        "| si vas a usar | mira antes |",
+        "| if you are about to use | look first at |",
         "|---|---|",
-        "| cualquier `*_speed`, `*_accel`, `jerk_*` | `right_n_speed` / `left_n_speed` |",
-        "| cualquier `cos_phase_*` | `n_cos_phase` |",
-        "| cualquier columna bilateral | `n_both_hands`, `frac_both_hands` |",
-        "| `*_p05`, `*_p95`, `*_std` | el `n` de esa mano: percentiles con 5 fotogramas no son percentiles |",
-        "| cualquier `frac_*` | `frames_grid` |",
+        "| any `*_speed`, `*_accel`, `jerk_*` | `right_n_speed` / `left_n_speed` |",
+        "| any `cos_phase_*` | `n_cos_phase` |",
+        "| any bilateral column | `n_both_hands`, `frac_both_hands` |",
+        "| `*_p05`, `*_p95`, `*_std` | the `n` of that hand: percentiles over 5 frames are not percentiles |",
+        "| any `frac_*` | `frames_grid` |",
         "",
-        "## Las 7 anotaciones son etiquetas de un modelo, no realidad medida",
+        "## The 7 annotations are model labels, not measured reality",
         "",
         "`indoor_outdoor`, `show_type`, `hands_free`, `sitting_standing`, `screen_interaction`, "
-        "`sex`, `age` las escribio un modelo visual sobre fotogramas del clip. Sirven para "
-        "**estratificar** ('comparemos anclas sentadas con presentadores de pie'), no como verdad. "
-        "En particular `age` son números redondos: un modelo no mide 44 años, los estima.",
+        "`sex`, `age` were written by a visual model over frames of the clip. They are good for "
+        "**stratifying** ('let us compare seated anchors with standing presenters'), not as truth. "
+        "In particular `age` is round numbers: a model does not measure 44 years, it estimates them.",
         "",
         *(_seccion_voz(muestra_ejemplos["voz"]) if muestra_ejemplos else []),
-        "## Columnas",
+        "## Columns",
         "",
-        "`datos` es cuántos de los clips (o fotogramas) de este lote tienen valor en esa columna. "
-        "Si es bajo, la columna existe pero no tiene sustento aquí: no la uses para comparar clips.",
+        "`data` is how many of the clips (or frames) of this lot carry a value in that column. "
+        "If it is low, the column exists but has no support here: do not use it to compare clips.",
         "",
     ]
 
@@ -708,13 +709,13 @@ def escribir_markdown(diccionario, informe, ruta, muestra_ejemplos, portada=Fals
             continue
         sub["orden"] = sub["familia"].map(_familia_de_orden)
         sub = sub.sort_values(["orden", "columna"], kind="stable")
-        lineas += [f"### `{tabla}.parquet` — {int(sub['filas_tabla'].iloc[0])} filas x {len(sub)} columnas", ""]
+        lineas += [f"### `{tabla}.parquet` — {int(sub['filas_tabla'].iloc[0])} rows x {len(sub)} columns", ""]
         actual = None
         for _, fila in sub.iterrows():
             if fila["familia"] != actual:
                 actual = fila["familia"]
                 lineas += ["", f"#### {actual}", "",
-                           "| columna | ambito | qué mide | datos | min | mediana | max |",
+                           "| column | scope | what it measures | data | min | median | max |",
                            "|---|---|---|---|---|---|---|"]
             def numero(clave):
                 valor = fila.get(clave)
@@ -727,19 +728,19 @@ def escribir_markdown(diccionario, informe, ruta, muestra_ejemplos, portada=Fals
     familias = (diccionario[diccionario["formula_unidades"] != ""]
                 .drop_duplicates("familia")[["familia", "formula_unidades", "fuente"]]
                 .sort_values("familia", key=lambda s: s.map(_familia_de_orden), kind="stable"))
-    lineas += ["## Definiciones, tal como están en el código", "",
-               "Esto no es un resumen: es el texto que vive junto a la matematica "
-               "(`gesture_features.py`). Si aquí y en el código difieren, manda el código.", ""]
+    lineas += ["## Definitions, exactly as they are in the code", "",
+               "This is not a summary: it is the text that lives next to the maths "
+               "(`gesture_features.py`). If this and the code disagree, the code wins.", ""]
     for _, fila in familias.iterrows():
         lineas += [f"**{fila['familia']}**  ", f"{fila['formula_unidades']}  ",
                    f"*{fila['fuente']}*", ""]
 
-    lineas += ["## Las decisiones de diseño que hay que conocer", ""]
+    lineas += ["## The design decisions you need to know about", ""]
     for titulo, texto in informe["semantica_diseno"].items():
         lineas += [f"- **{titulo}** — {texto}", ""]
 
     lineas += [
-        "## Cinco cosas que hacer con esto",
+        "## Five things to do with this",
         "",
         "```python",
         "import pandas as pd",
@@ -747,171 +748,172 @@ def escribir_markdown(diccionario, informe, ruta, muestra_ejemplos, portada=Fals
         "frames = pd.read_parquet('final_frames.parquet')",
         "```",
         "",
-        "1. **Filtrar por sustento antes que por valor.** Quédate con clips con "
-        "`right_n_speed >= 30` y `left_n_speed >= 30` y mira cómo cambia la distribución de "
-        "`right_mean_speed`: es la diferencia entre gesticulación y ruido de detección. "
-        + (f"En este lote ese umbral deja **{muestra_ejemplos['sustento']} de "
-           f"{muestra_ejemplos['clips']} clips**: casi no filtra, y saberlo también es parte "
-           "del ejercicio (en la entrega vieja de 29 clips dejaba 6). Sube el umbral y mira "
-           "cuándo empieza a moverse la media: ahí está el punto donde dejas de promediar "
-           "ruido." if muestra_ejemplos["sustento"] is not None else
-           "Estos contadores vienen del bloque extendido: si esta entrega no lo trae, el "
-           "sustento se mira con `right_n_valid` y `left_n_valid`."),
-        "2. **Buscar gesticuladores sin usar la media.** Ordena por `right_frac_speed_gt_1p0` y "
-        "compara con `right_mean_speed`: la media la puede inflar un corte de montaje, el frac no.",
-        "3. **Manos que se turnan vs manos que se mueven juntas.** `coactivity_frac_0p5` alto con "
-        "`cos_phase_mean` bajo = alternancia; los dos altos = ambas manos en el mismo gesto. "
-        "Solo en clips con `n_cos_phase >= 10`.",
-        "4. **Qué dice la voz del gesto (abre la puerta primero).** Cruza `intensity` y `pitch`",
-        "de `final_frames` con `right_speed` de la misma fila, **solo en los fotogramas con voz**",
-        "(`pitch` entre 60 y 600, o `vad` si viene relleno): sin filtrar estás promediando",
-        "también los de silencio, que llevan número por la spline. Medido aquí: la",
-        f"correlación vale {muestra_ejemplos['voz']['corr_todo']} sin filtrar y",
-        f"{muestra_ejemplos['voz']['corr_voz']} filtrando por voz. «Casi nada en los dos",
-        "casos» es una respuesta válida, y es la que da este lote. La voz **solo existe",
-        "en `final_frames`**: `final_videos` no tiene ni una columna de voz.",
-        "5. **Comprobar que el número es real.** Coge el clip más rápido por `right_max_speed` "
-        + (f"(aquí **{muestra_ejemplos['clip_max_speed']}: "
-           f"{muestra_ejemplos['max_speed']:.1f} unidades de cuello por segundo, y eso lo firma "
-           "un solo fotograma**)" if muestra_ejemplos["max_speed"] is not None else "")
-        + ", extrae cuatro fotogramas del video y míralos. Un `max_speed` de dos cifras casi "
-        "siempre es un corte de plano o un zoom, no un manotazo: la velocidad es un cociente "
-        "entre dos posiciones, y si el encuadre cambia, la posición cambia sola.",
+        "1. **Filter by support before filtering by value.** Keep the clips with "
+        "`right_n_speed >= 30` and `left_n_speed >= 30` and watch how the distribution of "
+        "`right_mean_speed` changes: that is the difference between gesticulation and detection noise. "
+        + (f"In this lot that threshold leaves **{muestra_ejemplos['sustento']} of "
+           f"{muestra_ejemplos['clips']} clips**: it barely filters anything, and knowing that is part "
+           "of the exercise too (the old 29-clip delivery left 6). Raise the threshold and watch "
+           "when the mean starts to move: that is the point where you stop averaging "
+           "noise." if muestra_ejemplos["sustento"] is not None else
+           "These counters come from the extended block: if this delivery does not carry it, support "
+           "is checked with `right_n_valid` and `left_n_valid`."),
+        "2. **Look for gesticulators without using the mean.** Sort by `right_frac_speed_gt_1p0` and "
+        "compare it with `right_mean_speed`: an editing cut can inflate the mean, the frac no.",
+        "3. **Hands taking turns vs hands moving together.** High `coactivity_frac_0p5` with low "
+        "`cos_phase_mean` = alternation; both high = both hands in the same gesture. "
+        "Only in clips with `n_cos_phase >= 10`.",
+        "4. **What the voice says about the gesture (open the door first).** Cross `intensity` and `pitch`",
+        "of `final_frames` with `right_speed` of the same row, **only in the frames with voice**",
+        "(`pitch` between 60 and 600, or `vad` if it comes filled in): without filtering you are also",
+        "averaging the silence frames, which carry a number because of the spline. Measured here: the",
+        f"correlation is {muestra_ejemplos['voz']['corr_todo']} unfiltered and",
+        f"{muestra_ejemplos['voz']['corr_voz']} when filtering by voice. 'Almost nothing in both",
+        "cases' is a valid answer, and it is the one this lot gives. Voice **only exists",
+        "in `final_frames`**: `final_videos` has not a single voice column.",
+        "5. **Check that the number is real.** Take the fastest clip by `right_max_speed` "
+        + (f"(here **{muestra_ejemplos['clip_max_speed']}: "
+           f"{muestra_ejemplos['max_speed']:.1f} neck units per second, and a single frame signs that**)"
+           if muestra_ejemplos["max_speed"] is not None else "")
+        + ", extract four frames of the video and look at them. A two-digit `max_speed` almost "
+        "always is a shot cut or a zoom, not a swipe: speed is a quotient between two positions, and "
+        "if the framing changes, the position changes on its own.",
         "",
         "---",
         "",
-        f"Generado con `final_dataset/diccionario_columnas.py` (FEATURE_VERSION "
-        f"{informe['feature_version']}, extendidas {informe['extendidas']}). Cada fórmula viene de "
-        "las constantes de `gesture_features.py`; la cobertura de datos está medida sobre este "
-        "mismo parquet. No edites este fichero a mano: regenerarlo.",
+        f"Generated with `final_dataset/diccionario_columnas.py` (FEATURE_VERSION "
+        f"{informe['feature_version']}, extended {informe['extendidas']}). Every formula comes from the "
+        "constants of `gesture_features.py`; the data coverage is measured over this same parquet. Do "
+        "not edit this file by hand: regenerate it.",
     ]
     with open(ruta, "w", encoding="utf-8") as escritor:
         escritor.write("\n".join(lineas) + "\n")
 
 
 COTA_PITCH = (60.0, 600.0)      # Praat To Pitch: min 60, max 600 (extract_prosody.praat)
-COTA_FORMANTE = 5500.0           # Praat To Formant (burg): 5 formantes hasta 5500 Hz
-SUELO_HNR = -200.0               # suelo que reporta To Harmonicity (cc) en silencio
+COTA_FORMANTE = 5500.0           # Praat To Formant (burg): 5 formants up to 5500 Hz
+SUELO_HNR = -200.0               # floor To Harmonicity (cc) reports in silence
 VOZ_COLUMNAS = ("pitch", "intensity", "harmonicity", "voice_present",
                 "formant.1_frequency", "formant.2_frequency", "formant.3_frequency",
                 "formant.4_frequency", "formant.5_frequency")
 
 
 def _seccion_voz(voz):
-    """La seccion de voz del README, en dos versiones elegidas por MEDICION.
+    """The voice section of the README, in two versions chosen by MEASUREMENT.
 
-    La clave no es «cual me gusta»: son las cotas del analisis de Praat, que estan fijas en
-    extract_prosody.praat (To Pitch 60-600 Hz; To Formant (burg) con techo 5500 Hz; To
-    Harmonicity (cc) con suelo -200 dB). Cualquier valor fuera de esas cotas no lo pudo
-    producir Praat, asi que delata la cadena antigua. Y `voice_present` solo existe desde el
-    arreglo. Un lote regenerado con `pipeline_lote.sh --desde voz` cambia de seccion solo.
+    The key is not 'which one I like': these are the bounds of the Praat analysis, which are
+    fixed in extract_prosody.praat (To Pitch 60-600 Hz; To Formant (burg) with a 5500 Hz
+    ceiling; To Harmonicity (cc) with a -200 dB floor). No value outside those bounds could
+    have been produced by Praat, so it betrays the old chain. And `voice_present` only exists
+    since the fix. A lot regenerated with `pipeline_lote.sh --desde voz` changes section by itself.
     """
-    if voz["regimen"] == "sin voz":
-        # Callar no es honesto: si no hay columnas de voz, se dice. Y no se enseñan numeros,
-        # porque un «0 de 0» en una tabla parece una medida de cero fotogramas.
+    if voz["regimen"] == "no voice":
+        # Staying quiet is not honest: if there are no voice columns, it gets said. And no numbers
+        # are shown, because a '0 of 0' in a table looks like a measurement of zero frames.
         return [
-            "## La voz: la parte que viene de otra cadena, y como comprobarla",
+            "## The voice: the part that comes from another chain, and how to check it",
             "",
-            "**Esta entrega no trae columnas de voz**: no hay `pitch`, `intensity`, `harmonicity`, "
-            "formantes ni `voice_present` en `final_frames` (el stage de voz no corrio, o no dejo "
-            "nada publicable). No se enseña ningun numero de voz porque no hay de donde sacarlo: si "
-            "en un analisis de voz de este lote aparece un 0, ese 0 lo has puesto tu.",
+            "**This delivery does not carry voice columns**: there is no `pitch`, `intensity`, "
+            "`harmonicity`, no formants and no `voice_present` in `final_frames` (the voice stage did "
+            "not run, or left nothing publishable). No voice number is shown because there is nowhere "
+            "to take it from: if a 0 shows up in a voice analysis of this lot, that 0 is yours.",
             "",
         ]
     cabecera = [
-        "## La voz: la parte que viene de otra cadena, y como comprobarla",
+        "## The voice: the part that comes from another chain, and how to check it",
         "",
-        "Las columnas de voz no las hace la matemática de muñecas: las hace "
-        "`create_datasets/parole` (Praat + WhisperX + Silero VAD). Y durante años no cumplieron "
-        "el contrato del NULL, por tres motivos que se comprueban con las cotas del propio Praat "
-        f"(`To Pitch: 60, 600`; formantes hasta `{COTA_FORMANTE:.0f}` Hz; suelo del "
-        f"Harmonicidad `(cc)` en `{SUELO_HNR:.0f}` dB):",
+        "The voice columns are not made by the wrist maths: they are made by "
+        "`create_datasets/parole` (Praat + WhisperX + Silero VAD). And for years they did not honour "
+        "the NULL contract, for three reasons that are checked with Praat's own analysis bounds "
+        f"(`To Pitch: 60, 600`; formants up to `{COTA_FORMANTE:.0f}` Hz; the floor of "
+        f"Harmonicity `(cc)` at `{SUELO_HNR:.0f}` dB):",
         "",
-        "- Una unica spline cubica sobre TODA la pista, evaluada en todos los fotogramas: con 4 "
-        "puntos validos en todo el clip, hasta el silencio recibia numero.",
-        "- `splinefun` no puede apagar la extrapolacion (no acepta el argumento `extrapolation`), "
-        "asi que fuera del principio y del fin de la pista inventaba valores: de ahi salieron un "
-        "F5 de 29.144.321 Hz y un HNR de -246,7 dB en entregas del corpus.",
-        "- El centinela `pitch < 10 -> 0` pintaba de 0 la extrapolacion. En Praat `frequency = 0` "
-        "es el candidato `mute` («no hay pitch»), asi que el 0 SI significaba silencio; el problema "
-        "es que publicado como numero se cuela en las medias: medido, la media de pitch bajaba de "
-        "182,5 Hz a 125,3 Hz por culpa de esos ceros.",
+        "- One single cubic spline over the WHOLE track, evaluated at every frame: with 4 valid "
+        "points in the entire clip, even the silence received a number.",
+        "- `splinefun` cannot switch extrapolation off (it does not accept the `extrapolation` "
+        "argument), so outside the start and the end of the track it invented values: that is where "
+        "an F5 of 29,144,321 Hz and an HNR of -246.7 dB in corpus deliveries came from.",
+        "- The `pitch < 10 -> 0` sentinel painted the extrapolation 0. In Praat `frequency = 0` is "
+        "the `mute` candidate ('there is no pitch'), so the 0 really DID mean silence; the problem is "
+        "that published as a number it sneaks into the means: measured, the mean pitch dropped from "
+        "182.5 Hz to 125.3 Hz because of those zeros.",
         "",
-        "La cadena actual (`prosody_align.R`) parte cada pista en tramos de muestras consecutivas "
-        "y solo interpola **dentro** de un tramo; fuera de un tramo, NULL. Y publica "
-        "`voice_present`. Esto es lo que mide este documento sobre el Parquet que tienes delante:",
+        "The current chain (`prosody_align.R`) splits each track into runs of consecutive samples and "
+        "only interpolates **inside** a run; outside a run, NULL. And it publishes "
+        "`voice_present`. This is what this document measures over the Parquet in front of you:",
         "",
-        "| comprobacion en este lote | valor |",
+        "| check in this lot | value |",
         "|---|---|",
-        f"| regimen de la cadena de voz | **{voz['regimen']}** |",
+        f"| voice chain regime | **{voz['regimen']}** |",
         f"| `voice_present` | {voz['voice_present']} |",
-        f"| `pitch == 0` | {voz['pitch_ceros']} fotogramas |",
-        f"| `pitch` fuera de {COTA_PITCH[0]:.0f}-{COTA_PITCH[1]:.0f} Hz | {voz['pitch_fuera']} fotogramas |",
-        f"| `harmonicity` por debajo de {SUELO_HNR:.0f} dB | {voz['hnr_bajo_suelo']} fotogramas |",
-        f"| formantes fuera de 0-{COTA_FORMANTE:.0f} Hz | {voz['formantes_fuera']} valores |",
-        f"| rango de `intensity` | {voz['int_rango']} |",
-        f"| correlacion `intensity` con `right_speed`: sin filtrar / filtrando por voz ({voz['n_voz']} fotogramas) | {voz['corr_todo']} / {voz['corr_voz']} |",
+        f"| `pitch == 0` | {voz['pitch_ceros']} frames |",
+        f"| `pitch` outside {COTA_PITCH[0]:.0f}-{COTA_PITCH[1]:.0f} Hz | {voz['pitch_fuera']} frames |",
+        f"| `harmonicity` below {SUELO_HNR:.0f} dB | {voz['hnr_bajo_suelo']} frames |",
+        f"| formants outside 0-{COTA_FORMANTE:.0f} Hz | {voz['formantes_fuera']} values |",
+        f"| `intensity` range | {voz['int_rango']} |",
+        f"| `intensity` vs `right_speed` correlation: unfiltered / filtered by voice ({voz['n_voz']} frames) | {voz['corr_todo']} / {voz['corr_voz']} |",
         "",
     ]
-    if voz["regimen"] == "tramos":
+    if voz["regimen"] == "segments":
         resto = [
-            "Este lote sale de la cadena con `prosody_align.R`: no hay voz donde Praat no seguia "
-            "pista, no hay valores fuera de las cotas, y `voice_present` existe. Aun asi:",
+            "This lot comes out of the chain with `prosody_align.R`: there is no voice where Praat was "
+            "not following a track, there are no values outside the bounds, and `voice_present` "
+            "exists. Even so:",
             "",
-            "1. **Abre la puerta con `voice_present` antes de cualquier estadistico de voz.** Es el "
-            "equivalente exacto de exigir `right_n_speed` en las muñecas. La correlacion de la tabla "
-            "de arriba usa esta puerta.",
-            "2. **`intensity` no es un detector de voz**: Praat la sigue midiendo en el silencio, asi "
-            "que casi no tiene huecos. Para saber si hay voz esta `voice_present`.",
-            "3. **`words` es texto de un transcantor**, con sus errores; aqui NULL si significa silencio real.",
-            "4. **La voz no esta en `final_videos`.** Si quieres un estadistico de voz por clip, "
-            "calculalo tu desde `final_frames` y di con cuantos fotogramas lo sustentas, como hacen "
-            "`right_n_speed` y `n_cos_phase`.",
+            "1. **Open the door with `voice_present` before any voice statistic.** It is the exact "
+            "equivalent of demanding `right_n_speed` for the wrists. The correlation in the table "
+            "above uses this door.",
+            "2. **`intensity` is not a voice detector**: Praat keeps measuring it during silence, so it "
+            "has almost no gaps. To know whether there is voice there is `voice_present`.",
+            "3. **`words` is transcriber text**, with its errors; here NULL really does mean silence.",
+            "4. **Voice is not in `final_videos`.** If you want a voice statistic per clip, compute it "
+            "yourself from `final_frames` and say how many frames support it, the way `right_n_speed` "
+            "and `n_cos_phase` do.",
             "",
-            "Si aun asi aparece algun valor fuera de cotas, no lo imputes: aparta esos fotogramas y "
-            "dejalo constar. Y si comparas este lote con uno viejo, recuerda que en el viejo un tercio "
-            "de los fotogramas de voz son ceros de centinela.",
+            "If a value outside the bounds still shows up, do not impute it: set those frames aside and "
+            "record that you did. And if you compare this lot with an old one, remember that in the old "
+            "one a third of the voice frames are sentinel zeros.",
             "",
         ]
     else:
         resto = [
-            "**Este lote sale de la cadena antigua** (spline unica sobre toda la pista + centinela), "
-            "y eso se nota en los numeros de arriba: hay valores que el analisis de Praat no puede "
-            "producir, y no hay columna `voice_present`, asi que la unica puerta disponible es la "
-            f"banda de pitch ({voz['puerta']}).",
+            "**This lot comes out of the old chain** (one spline over the whole track + sentinel), and "
+            "that shows in the numbers above: there are values the Praat analysis cannot produce, and "
+            "there is no `voice_present` column, so the only door available is the pitch "
+            f"band ({voz['puerta']}).",
             "",
-            "1. **No trates un valor de voz como medida de ese fotograma.** Es la curva del clip "
-            "evaluado ahi: sirve para la forma global de un segmento, no para «que paso en el "
-            "fotograma 12».",
-            f"2. **Filtra antes de calcular cualquier cosa** (pitch entre {COTA_PITCH[0]:.0f} y "
-            f"{COTA_PITCH[1]:.0f} Hz). Sin filtro, parte de los fotogramas son ceros que no significan "
-            "«sin voz»: medido, la media de pitch pasa de 125,3 Hz a 182,5 Hz al filtrar.",
-            "3. **`intensity` es lo mas aprovechable** de esta parte, pero solo con la puerta puesta.",
-            "4. Los negativos de `harmonicity` son normales (un HNR negativo existe: es ruido); lo que "
-            f"no existe es por debajo de {SUELO_HNR:.0f} dB. Y una frecuencia de formante negativa o "
-            f"mayor que {COTA_FORMANTE:.0f} Hz es directamente imposibilidad, no un outlier.",
+            "1. **Do not treat a voice value as a measurement of that frame.** It is the curve of the "
+            "clip evaluated there: it is good for the global shape of a segment, not for 'what "
+            "happened in frame 12'.",
+            f"2. **Filter before computing anything** (pitch between {COTA_PITCH[0]:.0f} and "
+            f"{COTA_PITCH[1]:.0f} Hz). Unfiltered, some of the frames are zeros that do not mean "
+            "'no voice': measured, the mean pitch goes from 125.3 Hz to 182.5 Hz once you filter.",
+            "3. **`intensity` is the most usable part** of this side, but only with the door open.",
+            "4. The negatives of `harmonicity` are normal (a negative HNR exists: it is noise); what "
+            f"does not exist is anything below {SUELO_HNR:.0f} dB. And a negative formant frequency or "
+            f"one greater than {COTA_FORMANTE:.0f} Hz is plain impossibility, not an outlier.",
             "",
-            "El arreglo vive en `final_dataset/upstream_parole/` (con patch para enviar arriba); al "
-            "regenerar un lote con `pipeline_lote.sh --desde voz`, la voz sale con `voice_present` y "
-            "dentro de cotas, y esta seccion cambia sola.",
+            "The fix lives in `final_dataset/upstream_parole/` (with a patch to send upstream); when a "
+            "lot is regenerated with `pipeline_lote.sh --desde voz`, the voice comes out with "
+            "`voice_present` and inside the bounds, and this section changes on its own.",
             "",
         ]
     return cabecera + resto
 
 
 def sanidad_de_voz(ruta_final):
-    """Números de la voz medidos sobre el Parquet entregado, no de memoria.
+    """Voice numbers measured over the delivered Parquet, not from memory.
 
-    Lo que decide el regimen NO es una opinion: son las cotas del analisis. Con
-    `To Pitch: 60, 600`, `To Formant (burg): ..., 5500` y `To Harmonicity (cc)` no puede
-    salir un pitch de 0 Hz, un HNR de -1193 dB ni un formante de 29 MHz. Si los hay, esta
-    entrega viene de la cadena antigua (una spline cubica sobre toda la pista, evaluada
-    donde no habia medida, mas el centinela pitch<10 -> 0). Medido en el corpus viejo:
-    1408 fotogramas con pitch == 0, un F5 de 29.144.321 Hz y un HNR de -246,7 dB.
+    What decides the regime is NOT an opinion: these are the bounds of the analysis. With
+    `To Pitch: 60, 600`, `To Formant (burg): ..., 5500` and `To Harmonicity (cc)` you cannot
+    get a pitch of 0 Hz, an HNR of -1193 dB or a formant of 29 MHz. If they are there, this
+    delivery comes from the old chain (one cubic spline over the whole track, evaluated where
+    there was no measurement, plus the pitch<10 -> 0 sentinel). Measured in the old corpus:
+    1408 frames with pitch == 0, an F5 of 29,144,321 Hz and an HNR of -246.7 dB.
     """
-    vacio = {"regimen": "sin voz", "voice_present": "(sin columna de voz)", "pitch_ceros": 0,
-             "pitch_fuera": 0, "hnr_bajo_suelo": 0, "formantes_fuera": 0, "int_rango": "(sin columna)",
-             "corr_todo": "(sin columna)", "corr_voz": "(sin columna)", "n_voz": 0, "puerta": "n/a"}
+    vacio = {"regimen": "no voice", "voice_present": "(no voice column)", "pitch_ceros": 0,
+             "pitch_fuera": 0, "hnr_bajo_suelo": 0, "formantes_fuera": 0, "int_rango": "(no column)",
+             "corr_todo": "(no column)", "corr_voz": "(no column)", "n_voz": 0, "puerta": "n/a"}
     ruta = os.path.join(ruta_final, "final_frames.parquet")
     if not os.path.isfile(ruta):
         return vacio
@@ -925,70 +927,70 @@ def sanidad_de_voz(ruta_final):
     formantes_fuera = int(sum(((datos[c] < 0) | (datos[c] > COTA_FORMANTE)).sum() for c in forma_cols)) if forma_cols else 0
     pitch_fuera = int(((datos["pitch"] < COTA_PITCH[0]) | (datos["pitch"] > COTA_PITCH[1])).sum())
     pitch_ceros = int((datos["pitch"] == 0).sum())
-    # regimen: la banda 0 < pitch < 60 es imposible por construccion (el analisis no busca
-    # por debajo de 60 Hz), y lo mismo bajo el suelo del HNR o fuera del techo de formantes.
-    # `voice_present` solo existe desde el arreglo, asi que tambien vale como testigo.
+    # regime: the band 0 < pitch < 60 is impossible by construction (the analysis does not look
+    # below 60 Hz), and the same goes for under the HNR floor or above the formant ceiling.
+    # `voice_present` only exists since the fix, so it works as a witness too.
     imposible = pitch_fuera + bajo_suelo + formantes_fuera
     if "voice_present" in columnas:
-        regimen = "tramos"
+        regimen = "segments"
         vp = datos["voice_present"]
         con_voz = int(vp.fillna(False).sum())
-        voice_present = (f"{con_voz} de {total} fotogramas con pista medida "
-                         f"({100 * con_voz / max(total, 1):.1f} %); {int(vp.isna().sum())} sin pista de pitch")
+        voice_present = (f"{con_voz} of {total} frames with a measured track "
+                         f"({100 * con_voz / max(total, 1):.1f} %); {int(vp.isna().sum())} with no pitch track")
         puerta = "voice_present"
         voz = datos[vp.fillna(False)]
     else:
         regimen = "spline"
-        voice_present = "(sin columna: este lote es anterior al arreglo de la prosodia)"
-        puerta = f"{COTA_PITCH[0]:.0f}-{COTA_PITCH[1]:.0f} Hz de pitch"
+        voice_present = "(no column: this lot predates the prosody fix)"
+        puerta = f"{COTA_PITCH[0]:.0f}-{COTA_PITCH[1]:.0f} Hz"
         voz = datos[(datos["pitch"] >= COTA_PITCH[0]) & (datos["pitch"] <= COTA_PITCH[1])]
-    if regimen == "tramos" and imposible:
-        regimen = "tramos con restos"   # no se confia: se dice
+    if regimen == "segments" and imposible:
+        regimen = "segments with leftovers"   # no trust: it gets said
 
     def correlacion(tabla):
         if {"intensity", "right_speed"} <= set(tabla.columns):
             pares = tabla[["intensity", "right_speed"]].dropna()
             if len(pares) > 2 and pares.std().min() > 0:
                 return f"{pares.corr().iloc[0, 1]:+.3f} (n={len(pares)})"
-        return "no computable"
+        return "not computable"
 
     return {
         "regimen": regimen, "voice_present": voice_present, "puerta": puerta,
         "pitch_ceros": pitch_ceros, "pitch_fuera": pitch_fuera,
         "hnr_bajo_suelo": bajo_suelo, "formantes_fuera": formantes_fuera,
         "int_rango": (f"{datos['intensity'].min():.1f} .. {datos['intensity'].max():.1f} dB"
-                      if "intensity" in datos else "(sin columna)"),
+                      if "intensity" in datos else "(no column)"),
         "corr_todo": correlacion(datos), "corr_voz": correlacion(voz), "n_voz": len(voz),
     }
 
 
 def _polymnia_por_defecto():
-    """Donde está Polymnia: puede ser el padre (final_dataset/ vive dentro del repo)
-    o un hermano (una copia suelta junto a un checkout de Polymnia)."""
+    """Where Polymnia is: it can be the parent (final_dataset/ lives inside the repo)
+    or a sibling (a loose copy next to a Polymnia checkout)."""
     arriba = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return arriba if os.path.exists(os.path.join(arriba, "gesture_features.py")) \
         else os.path.join(arriba, "Polymnia")
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--final", required=True, help="carpeta final/ con los parquet y el manifiesto")
-    parser.add_argument("--csv", help="donde escribir el diccionario en CSV")
-    parser.add_argument("--md", help="donde escribir el diccionario en Markdown")
-    parser.add_argument("--readme", help="donde escribir el README con portada de entrega "
-                        "(es el fichero que se publica como DATASET.md dentro de final/)")
+    parser.add_argument("--final", required=True, help="final/ folder with the parquets and the manifest")
+    parser.add_argument("--csv", help="where to write the dictionary as CSV")
+    parser.add_argument("--md", help="where to write the dictionary as Markdown")
+    parser.add_argument("--readme", help="where to write the README with the delivery cover "
+                        "(it is the file published as DATASET.md inside final/)")
     parser.add_argument("--polymnia_root", default=_polymnia_por_defecto())
     args = parser.parse_args(argv)
 
     diccionario, informe = generar(args.final, args.polymnia_root)
-    # Nombres de esquema, no prosa: en ASCII a propósito, y el guard de abajo pifia
-    # ruidosamente si alguno no existe (un rename aquí vacía columnas del CSV en
-    # silencio, que es justo el tipo de bug que este script no puede tener).
+    # Schema names, not prose: in ASCII on purpose, and the guard below fails loudly if one of
+    # them does not exist (a rename here empties CSV columns in silence, which is exactly the
+    # kind of bug this script cannot have).
     columnas = ["tabla", "columna", "ambito", "familia", "que_mide", "formula_unidades",
                 "tipo", "no_nulos", "pct_no_nulos", "minimo", "mediana", "maximo", "fuente"]
     faltantes = [c for c in columnas if c not in diccionario.columns]
     if faltantes:
-        raise SystemExit(f"el diccionario no produce estas columnas de esquema: {faltantes}. "
-                         "Los nombres de campo no son texto de clase: no se acentúan.")
+        raise SystemExit(f"the dictionary does not produce these schema columns: {faltantes}. "
+                         "Field names are not class-facing prose: they stay plain ASCII.")
     vista = diccionario.reindex(columns=columnas)
 
     if args.csv:
@@ -1002,15 +1004,15 @@ def main(argv=None):
         destino = os.path.abspath(args.readme)
         dentro = os.path.abspath(args.final) + os.sep
         if destino.startswith(dentro):
-            raise SystemExit(f"--readme no puede escribir dentro de la entrega ({args.final}): "
-                             "final/ es un paquete atomico con sha256 en el manifiesto. Escribelo "
-                             "fuera y dejalo entrar a final_dataset.py con su propio --readme.")
+            raise SystemExit(f"--readme cannot write inside the delivery it describes ({args.final}): "
+                             "final/ is an atomic package with a sha256 in the manifest. Write it "
+                             "outside and let final_dataset.py bring it in with its own --readme.")
         os.makedirs(os.path.dirname(destino), exist_ok=True)
         escribir_markdown(diccionario, informe, destino, muestra, portada=True)
 
-    print(f"columnas documentadas: {len(vista)} "
-          f"({(vista['tabla'] == 'final_videos').sum()} en final_videos, "
-          f"{(vista['tabla'] == 'final_frames').sum()} en final_frames), sin resolver: 0")
+    print(f"documented columns: {len(vista)} "
+          f"({(vista['tabla'] == 'final_videos').sum()} in final_videos, "
+          f"{(vista['tabla'] == 'final_frames').sum()} in final_frames), unresolved: 0")
     if args.csv:
         print(f"csv: {args.csv}")
     if args.md:
