@@ -60,6 +60,11 @@ if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
 REQUIRED_POINTS = (4, 7)  # BODY_25: muñeca derecha, muñeca izquierda
+# Estados que cuentan como medicion VALIDA. `reutilizado` lo es de verdad: OpenPose ya
+# corrio en una pasada anterior y la cobertura se releera del mismo JSON, solo que sin
+# pagar GPU. Contar solo `medido` hacia que reanudar una auditoria ESCRIBIERA en ceros un
+# informe que estaba bien, y que ademas saliera 1 gritando "no se ha medido NINGUN clip".
+ESTADOS_MEDIDOS = ("medido", "reutilizado")
 # Costes medidos en RTX 4090 con clips de FREQ025 (~4,5 s, ~140 frames). Son DOS cifras a
 # proposito: la auditoria corre solo el modelo de cuerpo, y el pipeline corre ademas cara y
 # manos (argos.py declara --face_hands sin type=, asi que en la practica siempre van
@@ -287,7 +292,7 @@ def abortar_por_fallos_repetidos(estados, umbral=3):
     if len(estados) < umbral:
         return False
     ultimos = estados[-umbral:]
-    return len(set(ultimos)) == 1 and ultimos[0] not in ("medido", "reutilizado")
+    return len(set(ultimos)) == 1 and ultimos[0] not in ESTADOS_MEDIDOS
 
 
 def fila_no_intentada(fila, motivo):
@@ -307,8 +312,12 @@ def fila_no_intentada(fila, motivo):
 
 
 def resumen(filas, percent, sensibilidades=(40.0, 60.0)):
-    """El recuento de la auditoría. Las proporciones son sobre lo AUDITADO."""
-    medidos = [f for f in filas if f.get("estado") == "medido"]
+    """El recuento de la auditoría. Las proporciones son sobre lo AUDITADO.
+
+    Auditado incluye lo reaprovechado de una pasada anterior (`ESTADOS_MEDIDOS`): son
+    medidas reales, lo unico que no pagaron fue la GPU esta vez.
+    """
+    medidos = [f for f in filas if f.get("estado") in ESTADOS_MEDIDOS]
     n = len(medidos)
     pasa = sum(1 for f in medidos if f.get("pasa_coverage"))
     una = sum(1 for f in medidos if f.get("una_mano"))
@@ -325,7 +334,7 @@ def resumen(filas, percent, sensibilidades=(40.0, 60.0)):
             "una_mano_ic": ic_exacto(una, n),
             "pasa_gate": gate,
             "con_frames_multi_person": multi,
-            "sin_medir": [f for f in filas if f.get("estado") != "medido"],
+            "sin_medir": [f for f in filas if f.get("estado") not in ESTADOS_MEDIDOS],
             "por_sensibilidad": por_sens,
             "segundos": sum(_num(f.get("segundos"), 0.0) for f in filas)}
 
@@ -337,12 +346,16 @@ def _ruta_json(out_root, clip):
 
 
 def audit_clip(ruta_video, out_root, config, openpose_path, model_pose,
-               cara_manos=False, force=False):
+               cara_manos=False, force=False, sensibilidades=(40.0, 60.0)):
     """Un clip descartado: OpenPose donde nunca corrió, y su cobertura medida.
 
     Devuelve la fila del informe. Nunca lanza por un problema del clip: un OpenPose
     que no arranca o un `data_error` del gate son estados, no excepciones, para que
     un clip raro no deje la auditoría a medias.
+
+    `sensibilidades` tiene que llegar HASTA AQUI, no solo al resumen: es `veredicto` quien
+    escribe `pasa_al`, y `resumen` se limita a contar etiquetas que ya estan ahi. Si aqui
+    se usan los defaults, un `--sensibilidad 50,70` informa ceros con exit 0.
     """
     import argos
     import body_visibility
@@ -363,13 +376,13 @@ def audit_clip(ruta_video, out_root, config, openpose_path, model_pose,
             "frames_missing_json": 0, "segundos": 0.0}
     if not os.path.isfile(ruta_video):
         fila.update(estado="sin mp4", error=f"no existe {ruta_video}")
-        return veredicto({}, config.min_visible_percent), fila
+        return veredicto({}, config.min_visible_percent, sensibilidades), fila
 
     json_dir = _ruta_json(out_root, clip)
     esperados, error_conteo = argos._frame_count(ruta_video)
     if error_conteo:
         fila.update(estado="sin conteo de frames", error=error_conteo)
-        return veredicto({}, config.min_visible_percent), fila
+        return veredicto({}, config.min_visible_percent, sensibilidades), fila
     fila["frames"] = esperados
 
     ya_medido = os.path.isdir(json_dir) and any(
@@ -388,7 +401,7 @@ def audit_clip(ruta_video, out_root, config, openpose_path, model_pose,
         if rc != 0:
             fila.update(estado="openpose fallo", error=f"openpose devolvio rc={rc}")
             fila["segundos"] = round(time.time() - t0, 1)
-            return veredicto({}, config.min_visible_percent), fila
+            return veredicto({}, config.min_visible_percent, sensibilidades), fila
 
     decision = body_visibility.evaluate_body_visibility(json_dir, esperados, config,
                                                         clip=clip).as_dict()
@@ -399,12 +412,12 @@ def audit_clip(ruta_video, out_root, config, openpose_path, model_pose,
     fila["frames_missing_json"] = decision.get("frames_missing_json", 0)
     if fila["gate"] == "data_error":
         fila.update(estado="data_error", error=str(decision.get("error") or "")[:300])
-        return veredicto({}, config.min_visible_percent), fila
+        return veredicto({}, config.min_visible_percent, sensibilidades), fila
 
     pcts = {p["point"]: p["coverage_percent"] for p in decision.get("points", [])}
     fila["op_dcha_pct"] = round(pcts.get(4, float("nan")), 1)
     fila["op_izq_pct"] = round(pcts.get(7, float("nan")), 1)
-    v = veredicto(pcts, config.min_visible_percent)
+    v = veredicto(pcts, config.min_visible_percent, sensibilidades)
     v["pasa_gate"] = fila["gate"] == "accepted"  # el gate rechaza ademas por multi_person
     return v, fila
 
@@ -588,7 +601,8 @@ def main(argv=None):
         ruta = fila.get("path") or os.path.join(args.lote, "videos", "masked",
                                                 str(fila.get("video", "")))
         v, medida = audit_clip(ruta, out_root, config, args.openpose_path, args.model_pose,
-                               cara_manos=args.cara_manos, force=args.force)
+                               cara_manos=args.cara_manos, force=args.force,
+                               sensibilidades=sensibilidades)
         medida.update({k: fila.get(k) for k in ("sp_both", "sp_any", "sp_right", "sp_left",
                                                 "max_people")})
         medida.update({"pasa_coverage": v["pasa_coverage"], "una_mano": v["una_mano"],

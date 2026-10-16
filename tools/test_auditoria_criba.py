@@ -573,6 +573,68 @@ def test_el_coste_estimado_es_el_de_la_configuracion():
           f"{segundos_por_clip(False)} vs {segundos_por_clip(True)}")
 
 
+def test_reanudar_no_borra_lo_ya_auditado():
+    """Re-auditar un lote ya medido tiene que informar lo mismo, no ceros.
+
+    `audit_clip` marca lo reaprovechado como 'reutilizado' para no repetir GPU. Si
+    `resumen` solo cuenta 'medido', la segunda pasada informa 0 de 0: sobrescribe un
+    RESUMEN.md que estaba bien y encima sale 1 por la guarda de "no se ha medido NINGUN
+    clip", que es justo lo contrario de lo que intenta avisar.
+    """
+    filas = [
+        dict(clip("a", 0.0), estado="reutilizado", pasa_coverage=True, una_mano=True,
+             pasa_gate=True, pasa_al="40,60", frames_multi_person="0", segundos="0.0"),
+        dict(clip("b", 0.0), estado="reutilizado", pasa_coverage=False, una_mano=True,
+             pasa_gate=False, pasa_al="40", frames_multi_person="0", segundos="0.0"),
+        dict(clip("c", 0.0), estado="medido", pasa_coverage=True, una_mano=True,
+             pasa_gate=True, pasa_al="40,60", frames_multi_person="0", segundos="4.5"),
+        dict(clip("d", 0.0), estado="no intentado", pasa_coverage=False, una_mano=False,
+             pasa_gate=False, pasa_al="", frames_multi_person="0", segundos="0.0",
+             error="abortado tras 3 fallos identicos"),
+    ]
+    r = resumen(filas, 80.0)
+    check("lo reutilizado es un dato, no un hueco", r["auditados"] == 3, str(r["auditados"]))
+    check("reutilizado no cae en 'sin medir'",
+          [f["video"] for f in r["sin_medir"]] == ["d.mp4"], str(r["sin_medir"]))
+    check("el recuento sobrevive a la reanudacion",
+          r["pasa_coverage"] == 2 and r["pasa_gate"] == 2, str(r))
+    check("reanudar TODO no dispara la guarda de 'nada medido'",
+          resumen(filas[:1], 80.0)["auditados"] == 1,
+          "auditados=0 es lo que hace que main devuelva 1 y escriba el informe en ceros")
+
+
+def test_sensibilidad_llega_a_la_medida_por_clip():
+    """`--sensibilidad` se parseaba pero no llegaba a `audit_clip`.
+
+    `main` solo la pasaba a `resumen`, que busca "50" y "70" en un `pasa_al` calculado con
+    los defaults 40/60: con `--sensibilidad 50,70` el informe salia con ceros y el comando
+    devolva exit 0, o sea un exito con numeros inventados. El flag prometi algo que no
+    hacia, y el único sitio donde se podia detectar era el propio clip.
+    """
+    from auditoria_criba import audit_clip
+    with tempfile.TemporaryDirectory() as td:
+        video = os.path.join(td, "clipS.mp4")
+        open(video, "wb").close()
+        record = {}
+        guardados = _modulos_falsos(record, cobertura={0: 90.0, 7: 90.0})
+        try:
+            v_def, fila_def = audit_clip(video, os.path.join(td, "out"), _Config(),
+                                        "/opt/openpose", "BODY_25")
+            v_ped, fila_ped = audit_clip(video, os.path.join(td, "out"), _Config(),
+                                        "/opt/openpose", "BODY_25",
+                                        sensibilidades=(50.0, 70.0))
+        finally:
+            _restaura(guardados)
+    check("las dos pasadas midieron lo mismo (90 % en las dos munecas)",
+          fila_def["op_dcha_pct"] == fila_ped["op_dcha_pct"] == 90.0,
+          str((fila_def["op_dcha_pct"], fila_ped["op_dcha_pct"])))
+    check("por defecto sigue informando 40 y 60", v_def["pasa_al"] == "40,60",
+          v_def["pasa_al"])
+    check("con --sensibilidad 50,70 el clip lleva 50,70", v_ped["pasa_al"] == "50,70",
+          v_ped["pasa_al"])
+    check("y no se queda en los defaults", "40" not in v_ped["pasa_al"], v_ped["pasa_al"])
+
+
 if __name__ == "__main__":
     for fn in sorted(k for k in dir() if k.startswith("test_")):
         try:
