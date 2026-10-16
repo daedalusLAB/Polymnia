@@ -33,12 +33,20 @@ restaura con `final_dataset/install_parole_fix.sh` y se mira `final_dataset/upst
 El último debe dar `307` (redirige al caché). Si da error de conexión, Gallo está caído y no
 hay nada que lanzar: todo lo demás depende de las descargas.
 
-**La clave de Theia no hace falta tocarla.** El script ya exporta `THEIA_API_BASE`,
-`THEIA_API_KEY` y `THEIA_MODEL` desde `Polymnia/.env` antes de llamar a Theia, y eso es
-necesario: `theia.py` lee el default de `--api-key` **antes** de cargar el `.env`, así que sin
-exportarla la petición sale con `Bearer none` y el endpoint contesta `401`. (Si lanzas `polymnia
-theia` a mano sin exportar nada, tropiezas con eso; medido: `error=1` sin exportar, `ok=1`
-exportando.)
+**La clave de Theia no hace falta tocarla.** `theia.py` carga `Polymnia/.env` **antes** de
+resolver su configuración: ni el pipeline ni un `polymnia theia` a mano necesitan exportar nada.
+Precedencia: flag > entorno > `.env`. La etapa escribe en el log de dónde salió cada dato
+(`[theia] model=… @ https://… (base:.env clave:.env modelo:.env)`) y **nunca escribe la clave**,
+así que un 401 se diagnostica leyendo esa línea.
+
+*(Historial, para que no te lo creas de memoria: hasta octubre de 2026 el default de `--api-key`
+se resolvía al construir el parser —antes de cargar el `.env`—, se quedaba en la cadena `"none"`
+y la petición salía con `Bearer none` → 401. `pipeline_lote.sh` lo rodeaba exportando las tres
+variables y además comprobaba `[ -f "$RAIZ/Polymnia/.env" ]`, pero `$RAIZ` **ya es** `Polymnia`,
+así que preguntaba por `Polymnia/Polymnia/.env`, que no existe: la etapa 9 se saltaba **siempre**
+y el motivo solo se escribía al stdout, fuera del lote. Fijado en `theia.py` y fijado por tests en
+`tools/test_theia.py`; si alguien vuelve a poner un `default=os.environ.get(...)` en el parser,
+pincha `test_parser_defaults_no_resuelven_el_entorno`.)*
 
 Si aun así ves `401` en el log, entonces sí es la clave o el endpoint:
 
@@ -50,8 +58,8 @@ curl -s -o /dev/null -w "%{http_code}\n" \
   "$(sed -n 's/^THEIA_API_BASE=//p' Polymnia/.env)/chat/completions"
 ```
 
-Prueba una generación de verdad. `/models` no vale: contestaba `200` mientras la generación
-devolvía `401`. Y si la clave está muerta, **lanza igual**: solo pierdes las 7 columnas de
+Prueba una generación de verdad: `/models` responde también con la clave, pero no prueba la
+generación. Y si la clave está muerta, **lanza igual**: solo pierdes las 7 columnas de
 anotación visual y se recupera en 1 minuto (`--desde theia --force`).
 
 ## 1. Valida el TSV sin descargar nada
@@ -116,7 +124,7 @@ Flags que vas a usar de verdad:
 | `--limit N` | las N primeras líneas. La prueba barata |
 | `--desde ETAPA --force` | reanudar. Etapas: `tsv descarga asd preseleccion openpose limpieza voz merge theia final` |
 | `--hasta ETAPA` | parar después de una etapa |
-| `--min-sp-both 0.8` / `--yolo-conf 0.7` | umbrales de la criba. Bajar `--min-sp-both` a 0.6 te da más clips con peores muñecas |
+| `--min-sp-any 0.6` / `--yolo-conf 0.7` | umbrales de la criba. `--min-sp-any` decide sobre `sp_any` (la mejor de las dos muñecas: con una vale, porque las features calculan cada lado por separado). `--yolo-conf` es otra cosa: la confianza del keypoint, y bajarla **no** recupera clips útiles (medido en los 29 de calibración) |
 | `--no-extended` | features versión 2 (sin el bloque 3) |
 | `--readme MI.md` | se publica como `final/DATASET.md` y entra en el SHA-256 |
 | `--skip-theia` | si sabes que la clave está mal |
