@@ -128,9 +128,18 @@ git apply ~/miscosas/trendsI/final_dataset/upstream_parole/patches/prosody-align
 ```
 
 El test de arriba esta adaptado al layout de PAROLE (`scripts/`); el de aqui
-(`test_prosody_interp.py`) apunta a `create_datasets/parole/scripts/`, que es donde vive en
-Polymnia. Son la misma comprobacion con dos rutas distintas: si el de PAROLE cambia, se refleja
-aqui a mano y `install_parole_fix.sh --comprobar` lo pilla.
+(`Polymnia/tools/test_prosody_interp.py`) apunta a `create_datasets/parole/scripts/`, que es donde
+vive en Polymnia. Son la misma comprobacion con dos rutas distintas, y cada repositorio mantiene
+la suya: el de Polymnia ademas resuelve la cadena de prosodia pasando por este repo y sus mensajes
+`[skip]` nombran rutas que un usuario de Polymnia tiene delante.
+
+Por eso `install_parole_fix.sh` **solo** copia y compara los dos `.R`, que si son copias fieles de
+PAROLE. El test no esta en el mapa: copiarlo significaria sobrescribir la version local (mejor)
+con la de arriba, y compararlo daria rojo permanente. La copia que se envio a PAROLE se conserva
+aqui como registro historico en `upstream_parole/test_prosody_interp.py`; no es fuente de nada.
+
+Pendiente para una sesion de PAROLE: subir a PAROLE las dos frases del `[skip]` que aqui estan
+mejores (linea 226 y 228 del test). No cambia ninguna comprobacion, solo se ve.
 
 ### Si algun dia sale `DIFIERE` con PAROLE ya actualizado
 

@@ -41,13 +41,38 @@ done
 SCRIPTS="$DEST/create_datasets/parole/scripts"
 
 # fichero_canonico -> destino relativo
+#
+# Only faithful upstream copies belong here: `--aplicar` overwrites the
+# destination with what is in upstream_parole/, so anything listed here must be
+# expected to be byte-identical to PAROLE forever.
+#
+# Polymnia/tools/test_prosody_interp.py is NOT a faithful copy and must not be
+# listed. It is the same test, but maintained here on purpose: it resolves the
+# prosody chain through this repository (with a fallback when PAROLE is not
+# installed) and its `[skip]` messages name the paths a Polymnia user actually
+# has. Its PAROLE twin lives in PAROLE's own tests/. Comparing bytes would be a
+# lie -- and `--aplicar` would overwrite the better local version with the
+# upstream one, which is what this entry used to do.
 MAPA=(
   "upstream_parole/process_prosody.R:create_datasets/parole/scripts/process_prosody.R"
   "upstream_parole/prosody_align.R:create_datasets/parole/scripts/prosody_align.R"
-  "upstream_parole/test_prosody_interp.py:tools/test_prosody_interp.py"
 )
 
+# Reported for orientation only; never copied, never compared.
+CO_MAINTAINED=("tools/test_prosody_interp.py")
+
 sha() { sha256sum "$1" | cut -c1-16; }
+
+if [ "$COMPROBAR" -eq 1 ]; then
+  for f in "${CO_MAINTAINED[@]}"; do
+    if [ -f "$DEST/$f" ]; then
+      echo "  co-maintained  $f  (Polymnia keeps its own version; the PAROLE twin lives in PAROLE's tests/, not compared)"
+    else
+      echo "  missing        $f  (Polymnia's own test, tracked in git; not installed by this script)"
+    fi
+  done
+fi
+
 faltan=0
 for par in "${MAPA[@]}"; do
   ORIG="$AQUI/${par%%:*}"
