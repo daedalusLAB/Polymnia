@@ -381,21 +381,18 @@ fi
 # ============================================================ 2. descarga
 if hacer descarga; then
   etapa "2/10  descargar clips"
-  ANTES=$([ -f "$FDLOG" ] && stat -c%s "$FDLOG" || echo 0)
+  T0_FALLOS="$(date '+%Y-%m-%d %H:%M:%S')"
   corre "$OUT/logs/02_download.log" "$POLY" download \
         --txt_file "$OUT/tsv/efectivo.tsv" --searchterm "$SEARCHTERM" \
         --output_dir "$OUT/videos/raw" --offset "$OFFSET" \
     || abortar "la descarga devolvió error" descarga
   RAW=$( { find "$OUT/videos/raw" -name '*.mp4' || true; } | wc -l)
-  # el log de fallos vive junto al repo y hace append entre pasadas: se reporta SOLO el delta
-  if [ -f "$FDLOG" ]; then
-    DESPues=$(stat -c%s "$FDLOG")
-    if [ "$DESPues" -gt "$ANTES" ]; then
-      tail -c +$((ANTES + 1)) "$FDLOG" > "$OUT/informes/failed_downloads_nuevos.log"
-    else
-      : > "$OUT/informes/failed_downloads_nuevos.log"
-    fi
-  fi
+  # El log de fallos es UNO para todo el repo (`uvrun` fija el cwd): con dos lotes bajando
+  # a la vez comparten fichero, asi que se filtra por lote y por hora de inicio en vez de
+  # por offset de bytes, que le copiaba a cada lote los fallos del otro.
+  "$PY" "$POLY_ROOT/tools/filtrar_fallos_descarga.py" --log "$FDLOG" \
+        --searchterm "$SEARCHTERM" --desde "$T0_FALLOS" \
+        --out "$OUT/informes/failed_downloads_nuevos.log" || true
   NFAIL=$(wc -l < "$OUT/informes/failed_downloads_nuevos.log" 2>/dev/null || echo 0)
   # un HTML de error pasa el control de tamaño: hay que abrir los vídeos
   OUT_DIR="$OUT" "$PY" - <<'PY'
