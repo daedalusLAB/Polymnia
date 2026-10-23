@@ -378,6 +378,107 @@ def test_reasoning_model_truncated_is_reported():
             fake.stop()
 
 
+# ------------------------------------------------------------- config ----
+
+def test_parser_defaults_no_resuelven_el_entorno():
+    """El parser no puede resolver el entorno en sus defaults: es el bug del 401.
+
+    Con `default=os.environ.get("THEIA_API_KEY", "none")`, el valor se fija al
+    construir el parser - antes de que `load_env` meta el .env en el entorno - y
+    `"none"` es truthy, asi que ninguna linea posterior lo recuperaba ya: la
+    peticion salia con `Bearer none` y el endpoint contestaba 401 con un .env
+    perfecto en el disco. Los tres defaults tienen que ser None.
+    """
+    saved = {k: os.environ.get(k) for k in ("THEIA_API_BASE", "THEIA_API_KEY", "THEIA_MODEL")}
+    os.environ["THEIA_API_KEY"] = "de-entorno"
+    try:
+        args = theia.build_parser().parse_args(["-i", "x", "-n", "1"])
+        check("default de --api-key es None, no el entorno", args.api_key is None,
+              repr(args.api_key))
+        check("default de --api-base es None", args.api_base is None, repr(args.api_base))
+        check("default de --model es None", args.model is None, repr(args.model))
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None) if v is None else os.environ.setdefault(k, v)
+
+
+def test_dotenv_aporta_endpoint_clave_y_modelo():
+    """Sin nada exportado, el .env de la raiz tiene que dar la clave real."""
+    with tempfile.TemporaryDirectory() as td:
+        env_file = theia.Path(td) / ".env"
+        env_file.write_text("# comentario\nexport THEIA_API_BASE=https://vllm.local/v1\n"
+                            'THEIA_API_KEY="sk-secreta-123"\n'
+                            "THEIA_MODEL=Qwen-VL\nTHEIA_SUELTO=sin usar\n", encoding="utf-8")
+        env = {}
+        added = theia.load_env(env_file, env=env)
+        config, origen = theia.resolve_endpoint(env=env, dotenv_added=added)
+        check(".env: base", config["api_base"] == "https://vllm.local/v1", str(config))
+        check(".env: la clave llega (no 'none')",
+              config["api_key"] == "sk-secreta-123", repr(config["api_key"]))
+        check(".env: modelo", config["model"] == "Qwen-VL", str(config))
+        check(".env: origen anotado como .env",
+              (origen["api_base"], origen["api_key"], origen["model"]) == (".env",) * 3,
+              str(origen))
+        check("load_env anade lo del .env (tambien lo que Theia no usa: es un .env normal)",
+              added == {"THEIA_API_BASE", "THEIA_API_KEY", "THEIA_MODEL", "THEIA_SUELTO"},
+              str(added))
+
+
+def test_precedencia_flag_y_entorno_sobre_dotenv():
+    """flag > entorno > .env. load_env no pisa el entorno, y eso es lo que decide."""
+    with tempfile.TemporaryDirectory() as td:
+        env_file = theia.Path(td) / ".env"
+        env_file.write_text("THEIA_API_BASE=de-dotenv\nTHEIA_API_KEY=clave-dotenv\n"
+                            "THEIA_MODEL=modelo-dotenv\n", encoding="utf-8")
+        env = {"THEIA_API_KEY": "clave-entorno"}
+        added = theia.load_env(env_file, env=env)
+        check("el entorno no se pisa", env["THEIA_API_KEY"] == "clave-entorno", env["THEIA_API_KEY"])
+        check("load_env no declara lo que no anadio", "THEIA_API_KEY" not in added, str(added))
+        cfg, org = theia.resolve_endpoint(env=env, dotenv_added=added)
+        check("entorno gana sobre .env",
+              (cfg["api_key"], org["api_key"]) == ("clave-entorno", "entorno"), str((cfg, org)))
+        check("lo demas sale del .env",
+              (cfg["api_base"], org["api_base"]) == ("de-dotenv", ".env"), str((cfg, org)))
+        cfg2, org2 = theia.resolve_endpoint(cli_base="de-flag", cli_key="clave-flag",
+                                           cli_model="modelo-flag", env=env,
+                                           dotenv_added=added)
+        check("la flag gana a entorno y .env",
+              (org2["api_base"], org2["api_key"], org2["model"]) == ("flag",) * 3
+              and cfg2["api_key"] == "clave-flag", str((cfg2, org2)))
+
+
+def test_sin_configuracion_no_es_una_falla_silenciosa():
+    """Sin clave en ningun sitio se manda 'none' (endpoint abierto) y el origen lo dice.
+
+    Base y modelo ausentes se dejan a None: es lo que hace que `main` pete con
+    `parser.error` en vez de llamar a un endpoint vacio.
+    """
+    cfg, org = theia.resolve_endpoint(env={}, dotenv_added=())
+    check("sin clave -> 'none' explicito", cfg["api_key"] == theia.NO_KEY, repr(cfg["api_key"]))
+    check("sin clave -> origen 'sin clave'", org["api_key"] == "sin clave", str(org))
+    check("sin base/modelo -> None para que main lo reporte",
+          cfg["api_base"] is None and cfg["model"] is None
+          and org["api_base"] == "ausente", str((cfg, org)))
+    vacio = theia.Path(tempfile.mkdtemp()) / ".env"
+    vacio.write_text("THEIA_API_BASE=\nTHEIA_MODEL=\n", encoding="utf-8")
+    env = {}
+    added = theia.load_env(vacio, env=env)
+    cfg2, org2 = theia.resolve_endpoint(env=env, dotenv_added=added)
+    check("clave vacia en el .env cuenta como ausente, no como valor",
+          cfg2["api_base"] is None and org2["api_base"] == "ausente", str((cfg2, org2)))
+
+
+def test_describe_endpoint_nunca_escribe_la_clave():
+    """El log dice de donde viene cada dato; la clave nunca sale por ahi."""
+    cfg, org = theia.resolve_endpoint(env={"THEIA_API_BASE": "https://vllm.local/v1",
+                                          "THEIA_API_KEY": "sk-supersecreta",
+                                          "THEIA_MODEL": "Qwen-VL"}, dotenv_added=())
+    linea = theia.describe_endpoint(cfg, org)
+    check("describe: modelo y base visibles", "Qwen-VL" in linea and "vllm.local" in linea, linea)
+    check("describe: origen de la clave", "clave:.env" in linea or "clave:entorno" in linea, linea)
+    check("describe: NO escribe la clave", "sk-supersecreta" not in linea, linea)
+
+
 if __name__ == "__main__":
     for fn in sorted(k for k in dir() if k.startswith("test_")):
         try:

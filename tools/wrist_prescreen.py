@@ -33,6 +33,15 @@ Two wrist metrics per clip, because which body is the subject depends on the sta
   `videos_raw/` a two-shot has several bodies and "the wrist" is ambiguous; the face
   picks the one that means the same thing as ASD's track.
 
+A third column, `sp_any` = max(sp_right, sp_left), is what `pipeline_lote.sh` admits on
+(`--min-sp-any`, default 0.6): a clip with one clean wrist does yield wrist features,
+because the feature stack treats the two wrists independently and can only fail to
+compute what it never saw. Requiring BOTH wrists in the same sampled frame (`sp_both`, the
+old criterion) threw away a clip OpenPose later rated 91.9 % / 100 % with `gate=accepted`
+- see `tools/auditoria_criba.py`, which exists to keep this claim measurable instead of
+received wisdom. `sp_both` is still written, as a ranking column and as the evidence of
+what the old rule did.
+
 Keypoint indices: ultralytics returns COCO-17, so wrists are 9 = left, 10 = right
 (person's own left/right, same convention as BODY_25, where they are 7 and 4).
 """
@@ -116,6 +125,42 @@ def wrist_scores(results, min_conf):
             hits["speaker"][0], hits["speaker"][1], hits["speaker"][2], max_people)
 
 
+def best_wrist(sp_right, sp_left):
+    """La mejor de las dos muñecas del hablante: el criterio con el que se ADMITE.
+
+    Por qué una y no las dos, medido: la regla anterior (`sp_both`) exige ver las dos
+    muñecas en el MISMO frame muestreado, y en el censo de los 16 clips que descartó
+    FREQ025 se dejó uno que OpenPose valoró luego en 91,9 % / 100 % de los frames
+    (`gate=accepted`). Ese clip era irrecuperable: la criba corre antes de OpenPose.
+    Con `sp_any >= umbral` ese falso negativo desaparece y no entra ninguno nuevo
+    (matriz completa de los 20 clips del lote, medida con OpenPose de verdad).
+
+    Y admitir una muñeca no es bajar la calidad de los features: `gesture_features.py`
+    calcula derecha e izquierda por separado y tolera que falte una (`*_n_observed`,
+    `*_frac_valid`); lo que no puede fabricar son las dos.
+
+    NaN solo si falta también la otra: un NaN no se traga la muñeca que sí se vio.
+    """
+    visto = [v for v in (sp_right, sp_left) if v == v]  # NaN != NaN
+    return max(visto) if visto else float("nan")
+
+
+def orden_de_fila(row):
+    """El orden del CSV: primero la métrica que decide, `sp_both` solo desempata.
+
+    Con `sp_any` los empates son legión (un lote entero de clips a 0,0), y sin desempate el
+    orden del CSV dependía del orden de carpeta. Se desempata por `sp_both` para que, a
+    igual de «algo se ve», salga antes el clip con las dos muñecas más presentes.
+
+    Un score NaN (clip no decodificable) va al final, no al principio: NaN comparado con
+    `<` es falso, y sin este cuidado un vídeo corrupto encabezaría el ranking.
+    """
+    def negativo(clave):
+        v = row.get(clave)
+        return -(v if v == v else -1.0)
+    return (negativo("sp_any"), negativo("sp_both"), row["video"])
+
+
 def prescreen_folder(videos_folder, weights=DEFAULT_WEIGHTS, frames=15, min_conf=0.2,
                      device=None, imgsz=None, model=None):
     """One ranked row per .mp4: fraction of sampled frames with each wrist visible."""
@@ -133,6 +178,7 @@ def prescreen_folder(videos_folder, weights=DEFAULT_WEIGHTS, frames=15, min_conf
             rows.append({"video": os.path.basename(path), "path": os.path.abspath(path),
                          "reported_frames": count, "n_sampled": 0, "right": nan, "left": nan,
                          "both": nan, "sp_right": nan, "sp_left": nan, "sp_both": nan,
+                         "sp_any": nan,
                          "max_people": 0, "status": "no decodificable"})
             continue
         kwargs = {"verbose": False, "conf": 0.30}
@@ -146,16 +192,19 @@ def prescreen_folder(videos_folder, weights=DEFAULT_WEIGHTS, frames=15, min_conf
                      "reported_frames": count, "n_sampled": scored,
                      "right": r / scored, "left": l / scored, "both": b / scored,
                      "sp_right": sr / scored, "sp_left": sl / scored, "sp_both": sb / scored,
+                     "sp_any": best_wrist(sr / scored, sl / scored),
                      "max_people": max_people,
                      "status": "ok" if scored == len(batch) else "muestreo parcial"})
-    rows.sort(key=lambda row: (-(row["sp_both"] if row["sp_both"] == row["sp_both"] else -1.0),
-                               row["video"]))
+    # Se rankea por la métrica que decide (sp_any); ver `orden_de_fila`.
+    rows.sort(key=orden_de_fila)
     return rows
 
 
 def write_csv(rows, out_csv):
-    fields = ["video", "sp_both", "both", "sp_right", "sp_left", "right", "left", "n_sampled",
-              "max_people", "reported_frames", "status", "path"]
+    # sp_any va justo despues de video porque es la columna con la que pipeline_lote.sh
+    # admite; sp_both se queda como ranking y como evidencia de la regla anterior.
+    fields = ["video", "sp_any", "sp_both", "both", "sp_right", "sp_left", "right", "left",
+              "n_sampled", "max_people", "reported_frames", "status", "path"]
     with open(out_csv, "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
@@ -191,8 +240,9 @@ def main(argv=None):
     write_csv(rows, args.out_csv)
     print(f"✅ {args.out_csv}")
     for row in rows:
-        print(f"   sp_both={row['sp_both']:5.2f} both={row['both']:5.2f} "
-              f"n={row['n_sampled']:3d} people={row['max_people']} {row['video'][:58]}")
+        print(f"   sp_any={row['sp_any']:5.2f} sp_both={row['sp_both']:5.2f} "
+              f"both={row['both']:5.2f} "
+              f"n={row['n_sampled']:3d} people={row['max_people']} {row['video'][:52]}")
     return 0
 
 

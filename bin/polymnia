@@ -58,6 +58,9 @@ Ejecuta etapas dentro del entorno uv del repo. No hay que activar venvs.
   polymnia apate     --input_folder D --n_persons 1       # WhisperX + palabras por frame
   polymnia merge     --input_folder D --n_persons 1 --db_name F.duckdb
                                      [--no-compat]        # saltar el adaptador de prosodia
+  polymnia lote      --lote DIR [--desde ETAPA] [--hasta ETAPA] [--force]
+                                     # pipeline COMPLETO (10 etapas) sobre un lote: descarga,
+                                     # ASD, criba, OpenPose, limpieza, voz, merge, theia y final
   polymnia test                           # tests de las partes que se pueden probar sin GPU
   polymnia theia   --input_folder D --n_persons 1 --db_name F.duckdb
                                      [--csv F] [--attempts N] [--workers N] [--limit N]
@@ -262,6 +265,7 @@ case "$cmd" in
             done
             exit $rc ;;
   duckdb)   "${REPO_ROOT}/tools/bin/duckdb" "$@" ;;
+  lote)     exec "${REPO_ROOT}/final_dataset/pipeline_lote.sh" "$@" ;;
   python)   uvrun python "$@" ;;
 
   parquet)

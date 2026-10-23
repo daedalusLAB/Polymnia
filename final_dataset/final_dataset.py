@@ -472,10 +472,24 @@ def build(db_path, tab_path, output_folder, offset, searchterm, polymnia_root,
         clip_ids = [r[0] for r in con.execute(f"SELECT DISTINCT id FROM {_quote(table)}").fetchall()]
         matched, unmatched = match_tab_to_clips(tab, clip_ids, searchterm)
         if matched.empty:
+            # El mismo sintoma aparece cuando el tab SI esta procesado pero el `searchterm`
+            # no es el termino que lleva en el nombre de fichero con el que se proceso: los
+            # ids se recomponen como `<basename>_<sec>_<sec>_<searchterm>`, de modo que NADA
+            # casa. Y "nada casa" es exactamente como se ve un lote al que le faltan etapas,
+            # asi que el mensaje viejo mandaba a repetir download->theia (ya hechos) en vez
+            # de mirar el flag. Costo real de aquel diagnostico equivocado: media hora y una
+            # entrega apartada. De ahi que se impriman el termino usado y dos ids de muestra.
+            ejemplo = "  |  ".join(str(c) for c in clip_ids[:2]) or "(la tabla no tiene ids)"
             raise FinalDatasetError(
-                "ningun clip de este tab esta procesado en esa base de datos, asi que no hay nada que "
-                "publicar. Falta la parte del pipeline: download -> asd -> filter -> argos -> voice -> "
-                "merge -> theia. Un tab solo aporta que clips pedir, no fotogramas ni keypoints.")
+                f"ningun clip de este tab casa con los {len(clip_ids)} ids de la tabla "
+                f"{_quote(table)} usando --searchterm='{searchterm}'.\n"
+                f"  ids en la base (muestra): {ejemplo}\n"
+                "  Si esos ids terminan en un termino distinto al de arriba, ESE es el fallo: "
+                "pasa el --searchterm con el que se descargo el lote (el defecto es "
+                "'beginning_to_end', y no es el termino con el que se descargo casi nada).\n"
+                "  Si de verdad no hay nada procesado, falta la parte del pipeline: download -> "
+                "asd -> filter -> argos -> voice -> merge -> theia. Un tab solo aporta que clips "
+                "pedir, no fotogramas ni keypoints.")
         guarda_holgura(matched, offset, permite=allow_padding_mismatch)
         keep = set(matched["id"])
         frame_meta, prosody, clip_meta, provenance_note = load_frame_metadata(con, table)

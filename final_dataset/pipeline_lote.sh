@@ -46,7 +46,7 @@ FILTROS="$POLY_ROOT/tools"
 [ -f "$FILTROS/wrist_prescreen.py" ] || FILTROS="$RAIZ/final_dataset"
 
 TSV=""; LOTE=""; OFFSET=2.0; SEARCHTERM="beginning_to_end"
-MIN_SP_BOTH=0.8; conf=0.7; FRAMES=15; DEVICE=0
+MIN_SP_ANY=0.6; conf=0.7; FRAMES=15; DEVICE=0
 # Los pesos no van en el repo. Manda la variable; si no, se aceptan los dos sitios donde
 # han estado siempre (dentro del repo y al lado del checkout, como TalkNet-ASD).
 # tools/preflight_entrega.sh usa la misma lista: si cambias uno, cambia el otro.
@@ -60,6 +60,8 @@ if [ -z "$PESO" ]; then
 fi
 LIMIT=""; GATE=0; MIN_VISIBLE=80; EXTENDED=1; README=""; SKIP_THEIA=0
 LIMPIEZA=1; CRITERIO_LIMPIEZA=todo; DICCIONARIO=1
+MAX_SIN_VOZ_PCT=5
+TSV_SET=0; OFFSET_SET=0; SEARCHTERM_SET=0; LIMIT_SET=0; PRINT_CONFIG=0
 DESDE=tsv; HASTA=final; FORCE=0
 
 uso() {
@@ -73,7 +75,11 @@ Opciones:
   --lote NOMBRE      carpeta de trabajo (por defecto: lote_AAAAMMDD_HHMM)
   --offset N         holgura por lado, misma en TODO el pipeline (defecto 2.0)
   --searchterm T     término del nombre de fichero (defecto beginning_to_end)
-  --min-sp-both F    umbral de admisión de la criba de muñecas (defecto 0.8)
+  --min-sp-any F     umbral de admisión de la criba de muñecas sobre sp_any (defecto 0.6)
+                     sp_any = la MEJOR de las dos muñecas del hablante. Se admitió así
+                     desde la auditoría de FREQ025: exigir las dos en el mismo frame
+                     (sp_both >= 0.8) se dejó un clip que OpenPose valoró luego a 91,9 % /
+                     100 % con gate=accepted. El umbral viejo sigue siendo el de --yolo-conf.
   --yolo-conf F      confianza de keypoint COCO del pre-filtro (defecto 0.7, calibrado)
   --frames N         frames muestreados por clip en la criba (defecto 15)
   --device N         GPU para ASD/OpenPose/criba (defecto 0)
@@ -89,25 +95,44 @@ Opciones:
   --sin-limpiar      NO limpiar candidatos fantasma (por defecto SÍ: sin eso, un solo frame
                      ambiguo manda el clip a 2_persons y el dataset sale vacío)
   --criterio-limpieza C  todo|torso|negro|nada (defecto todo; nada = solo informar)
+  --max-sin-voz-pct F  umbral de clips descartados por falta de voz/prosodia que para el lote
+                     (defecto 5; 0 lo desactiva). El clip descartado NO se publica y queda en
+                     videos/descartados/sin_voz/ e informes/descartados_sin_voz.tsv
   --desde ETAPA      reanudar desde una etapa asumiendo que las anteriores ya están
   --hasta ETAPA      parar después de una etapa
+  --print-config     imprime el tsv, offset, searchterm y limite resueltos y sale (0),
+                     sin crear ni tocar nada
   --force            permitir reutilizar una carpeta de lote ya existente
                      (lo que se sustituye se aparta a informes/_anterior/<hora>/, no se borra)
+
+Con lo mínimo, una tanda completa es:
+  polymnia lote --lote lotes/FREQ013
+El TSV se busca por el nombre del lote (MULTIFLOW_TSVs/*/Recurrence_Tabulations/<LOTE>_Tab.txt,
+POLYMNIA_TSV_DIR, la copia del propio lote) y el searchterm se deduce del nombre del lote.
 EOF
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tsv) TSV="$2"; shift 2 ;;
+    --tsv) TSV="$2"; TSV_SET=1; shift 2 ;;
     --lote) LOTE="$2"; shift 2 ;;
-    --offset) OFFSET="$2"; shift 2 ;;
-    --searchterm) SEARCHTERM="$2"; shift 2 ;;
-    --min-sp-both) MIN_SP_BOTH="$2"; shift 2 ;;
+    --offset) OFFSET="$2"; OFFSET_SET=1; shift 2 ;;
+    --searchterm) SEARCHTERM="$2"; SEARCHTERM_SET=1; shift 2 ;;
+    --min-sp-any) MIN_SP_ANY="$2"; shift 2 ;;
+    # --min-sp-both se retira, y NO se re-significa: quien lo pasa esperaba la regla estricta
+    # de las dos muñecas, y aceptarselo interpretándolo como sp_any ensancharía la admisión
+    # sin que nadie lo haya pedido. El ancho de admisión cambia qué clips hay en el dataset.
+    --min-sp-both)
+      echo "❌ --min-sp-both ya no existe: la criba admite por sp_any (la MEJOR de las dos" >&2
+      echo "   muñecas del hablante), no por las dos a la vez. Usa --min-sp-any F." >&2
+      echo "   Si de verdad quieres la regla estricta antigua no hay flag: sp_both sigue" >&2
+      echo "   escribiendose en munecas.csv, filtra con él." >&2
+      exit 1 ;;
     --yolo-conf) conf="$2"; shift 2 ;;
     --frames) FRAMES="$2"; shift 2 ;;
     --device) DEVICE="$2"; shift 2 ;;
     --peso) PESO="$2"; shift 2 ;;
-    --limit) LIMIT="$2"; shift 2 ;;
+    --limit) LIMIT="$2"; LIMIT_SET=1; shift 2 ;;
     --gate) GATE=1; shift ;;
     --min-visible-percent) MIN_VISIBLE="$2"; shift 2 ;;
     --no-extended) EXTENDED=0; shift ;;
@@ -116,17 +141,18 @@ while [ $# -gt 0 ]; do
     --sin-diccionario) DICCIONARIO=0; shift ;;
     --sin-limpiar) LIMPIEZA=0; shift ;;
     --criterio-limpieza) CRITERIO_LIMPIEZA="$2"; shift 2 ;;
+    --max-sin-voz-pct) MAX_SIN_VOZ_PCT="$2"; shift 2 ;;
     --desde) DESDE="$2"; shift 2 ;;
     --hasta) HASTA="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
+    --print-config) PRINT_CONFIG=1; shift ;;
     -h|--help) uso; exit 0 ;;
     *) echo "❌ opción desconocida: $1" >&2; uso; exit 1 ;;
   esac
 done
 
-[ -n "$TSV" ] || { echo "❌ falta --tsv" >&2; uso; exit 1; }
-[ -f "$TSV" ] || { echo "❌ no existe el TSV: $TSV" >&2; exit 1; }
-TSV="$(readlink -f "$TSV")"
+[ -f "$TSV" ] || [ -z "$TSV" ] || { echo "❌ no existe el TSV: $TSV" >&2; exit 1; }
+[ -z "$TSV" ] || TSV="$(readlink -f "$TSV")"
 for ruta in "$POLY" "$PY" "$DUCK"; do
   [ -x "$ruta" ] || { echo "❌ falta $ruta" >&2; exit 1; }
 done
@@ -142,15 +168,70 @@ case "$LOTE" in /*) OUT="$LOTE" ;; *) OUT="$PWD/$LOTE" ;; esac
 # el nombre de la base sale de la carpeta, no de --lote: con --lote /ruta/absoluta,
 # "$OUT/${LOTE_NOMBRE}.duckdb" habria dado /ruta/absoluta//ruta/absoluta.duckdb
 LOTE_NOMBRE="$(basename "$OUT")"
-if [ -e "$OUT" ] && [ "$FORCE" -eq 0 ] && [ "$I_DESDE" -eq 0 ]; then
+if [ -e "$OUT" ] && [ "$FORCE" -eq 0 ] && [ "$I_DESDE" -eq 0 ] && [ "$PRINT_CONFIG" -eq 0 ]; then
   echo "❌ $OUT ya existe. Usa otro --lote, o --force para reutilizarla." >&2; exit 1
 fi
 case "$OUT" in
   */entrega_*|*/entrega_*) echo "❌ no montes un lote dentro de una entrega ($OUT)" >&2; exit 1 ;;
 esac
 
+# ------------------------------------------- parametros recordados y derivados del lote
+# Una sola orden basta: `--lote lotes/FREQ013`. Lo que no se pasa se deduce del nombre del
+# lote; y si el lote ya existia, se recupera de informes/parametros.json (lo escribe la
+# etapa 1) para que un reanudado no salga con otro --offset que el de la descarga.
+PARAMS="$OUT/informes/parametros.json"
+param() {  # param <clave>: valor guardado, o nada
+  [ -f "$PARAMS" ] || return 0
+  "$PY" -c 'import json,sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    raise SystemExit
+v = d.get(sys.argv[2])
+print("" if v is None else v)' "$PARAMS" "$1" 2>/dev/null || true
+}
+if [ -f "$PARAMS" ]; then
+  if [ "$OFFSET_SET" -eq 0 ]; then v="$(param offset)"; if [ -n "$v" ]; then OFFSET="$v"; OFFSET_SET=1; fi; fi
+  if [ "$SEARCHTERM_SET" -eq 0 ]; then v="$(param searchterm)"; if [ -n "$v" ]; then SEARCHTERM="$v"; SEARCHTERM_SET=1; fi; fi
+  if [ "$LIMIT_SET" -eq 0 ]; then v="$(param limit)"; if [ -n "$v" ]; then LIMIT="$v"; LIMIT_SET=1; fi; fi
+fi
+if [ -z "$TSV" ]; then
+  # Los tabulados viven en MULTIFLOW_TSVs/<campaña>/Recurrence_Tabulations/: se busca en
+  # cualquiera de las campañas (tanvir, ayesha, ...) en vez de clavar una carpeta.
+  for candidato in "$OUT/tsv/${LOTE_NOMBRE}_Tab.txt" \
+                   "${POLYMNIA_TSV_DIR:+${POLYMNIA_TSV_DIR}/${LOTE_NOMBRE}_Tab.txt}" \
+                   $PWD/MULTIFLOW_TSVs/*/Recurrence_Tabulations/${LOTE_NOMBRE}_Tab.txt \
+                   $RAIZ/../MULTIFLOW_TSVs/*/Recurrence_Tabulations/${LOTE_NOMBRE}_Tab.txt \
+                   $RAIZ/MULTIFLOW_TSVs/*/Recurrence_Tabulations/${LOTE_NOMBRE}_Tab.txt \
+                   $PWD/MULTIFLOW_TSVs/*/${LOTE_NOMBRE}_Tab.txt \
+                   "$RAIZ/../MULTIFLOW_TSVs/${LOTE_NOMBRE}_Tab.txt" \
+                   "$RAIZ/MULTIFLOW_TSVs/${LOTE_NOMBRE}_Tab.txt"; do
+    if [ -n "$candidato" ] && [ -f "$candidato" ]; then TSV="$candidato"; break; fi
+  done
+fi
+if [ "$SEARCHTERM_SET" -eq 0 ]; then
+  SEARCHTERM="$(printf '%s' "$LOTE_NOMBRE" | tr 'A-Z' 'a-z')"
+fi
+if [ -z "$TSV" ]; then
+  echo "❌ no encuentro el TSV de $LOTE_NOMBRE: pásalo con --tsv" >&2
+  echo "   (busqué en \$OUT/tsv, \$POLYMNIA_TSV_DIR, ./MULTIFLOW_TSVs y ../MULTIFLOW_TSVs)" >&2
+  exit 1
+fi
+[ -f "$TSV" ] || { echo "❌ no existe el TSV: $TSV" >&2; exit 1; }
+TSV="$(readlink -f "$TSV")"
+
+if [ "$PRINT_CONFIG" -eq 1 ]; then
+  echo "lote:       $LOTE_NOMBRE"
+  echo "tsv:        $TSV"
+  echo "offset:     $OFFSET"
+  echo "searchterm: $SEARCHTERM"
+  echo "limit:      ${LIMIT:-(sin límite)}"
+  echo "etapas:     ${ORDEN[*]:I_DESDE:I_HASTA-I_DESDE+1}"
+  exit 0
+fi
+
 mkdir -p "$OUT"/{tsv,logs,informes} "$OUT"/videos/{raw,masked,1_person} \
-       "$OUT"/videos/descartados/{asd_sin_mascara,preseleccion_sp_bajo,clasificado_multipersona}
+       "$OUT"/videos/descartados/{asd_sin_mascara,preseleccion_sp_bajo,clasificado_multipersona,sin_voz}
 
 # ------------------------------------------------------------------ utilidades
 INICIO_TOTAL=$(date +%s)
@@ -223,7 +304,7 @@ verificar_holgura() {                  # mide en la duracion del clip con que ho
 echo "lote:            $OUT"
 echo "tsv:             $TSV"
 echo "offset:          $OFFSET   searchterm: $SEARCHTERM"
-echo "criba muñecas:   sp_both >= $MIN_SP_BOTH  (conf COCO $conf, $FRAMES frames, GPU $DEVICE)"
+echo "criba muñecas:   sp_any >= $MIN_SP_ANY  (la mejor de las dos muñecas; conf COCO $conf, $FRAMES frames, GPU $DEVICE)"
 echo "gate visibilidad: $([ "$GATE" -eq 1 ] && echo "ON ($MIN_VISIBLE%)" || echo "OFF (nada se descarta por multi_person)")"
 echo "bloque extendido: $([ "$EXTENDED" -eq 1 ] && echo "sí (FEATURE_VERSION 3)" || echo "no (v2)")"
 echo "etapas:          ${ORDEN[*]:I_DESDE:I_HASTA-I_DESDE+1}"
@@ -271,6 +352,28 @@ if malas[:5]:
     print(f"   ⚠️  líneas con pocos campos: {malas[:5]}")
 PY
   conteo tsv lineas_tsv "$NLINES"
+  # Parametros de ESTA pasada: la etapa final y cualquier reanudado los recuperan de aqui.
+  OUT_DIR="$OUT" P_TSV="$TSV" P_OFFSET="$OFFSET" P_SEARCHTERM="$SEARCHTERM" P_LIMIT="$LIMIT" "$PY" - <<'PY'
+import hashlib, json, os
+out = os.environ["OUT_DIR"]
+def sha(ruta):
+    h = hashlib.sha256()
+    with open(ruta, "rb") as fh:
+        for bloque in iter(lambda: fh.read(1 << 20), b""):
+            h.update(bloque)
+    return h.hexdigest()
+limite = os.environ.get("P_LIMIT") or ""
+datos = {
+    "offset": float(os.environ["P_OFFSET"]),
+    "searchterm": os.environ["P_SEARCHTERM"],
+    "limit": int(limite) if limite else None,
+    "tsv": os.path.basename(os.environ.get("P_TSV") or ""),
+    "tsv_sha256": sha(os.path.join(out, "tsv", "efectivo.tsv")),
+}
+with open(os.path.join(out, "informes", "parametros.json"), "w", encoding="utf-8") as fh:
+    json.dump(datos, fh, indent=2, ensure_ascii=False)
+print(f"   parámetros recordados: offset {datos['offset']:g}, searchterm {datos['searchterm']}")
+PY
   verificar_holgura
   coste "tabulado"
 fi
@@ -355,29 +458,37 @@ if hacer preseleccion; then
         --videos_folder "$OUT/videos/masked" --out_csv "$OUT/munecas.csv" \
         --weights "$PESO" --min-conf "$conf" --frames "$FRAMES" --device "$DEVICE" \
     || abortar "falló la criba de muñecas" preseleccion
-  OUT_DIR="$OUT" MIN="$MIN_SP_BOTH" "$PY" - <<'PY'
+  OUT_DIR="$OUT" MIN="$MIN_SP_ANY" "$PY" - <<'PY'
 import os, shutil, pandas as pd
 out = os.environ["OUT_DIR"]; min_sp = float(os.environ["MIN"])
-d = pd.read_csv(os.path.join(out, "munecas.csv")).sort_values("sp_both", ascending=False)
-selec = d[d.sp_both >= min_sp]
-desc = d[d.sp_both < min_sp]
+d = pd.read_csv(os.path.join(out, "munecas.csv"))
+if "sp_any" not in d.columns:
+    # munecas.csv de una criba vieja: se deriva con la misma regla que escribe la criba
+    # (max ignorando NaN; NaN solo si faltan las dos). Sin esto, reanudar un lote mixto
+    # reventaria con un KeyError en vez de admitir lo que tocaba.
+    d["sp_any"] = d[["sp_right", "sp_left"]].max(axis=1)
+d = d.sort_values(["sp_any", "sp_both"], ascending=False)
+selec = d[d.sp_any >= min_sp]
+desc = d[d.sp_any < min_sp]
 for _, r in selec.iterrows():
     shutil.copy2(r["path"], os.path.join(out, "videos", "1_person", r["video"]))
 for _, r in desc.iterrows():
     shutil.copy2(r["path"], os.path.join(out, "videos", "descartados", "preseleccion_sp_bajo", r["video"]))
-print(f"   admitidos {len(selec)} de {len(d)} con sp_both >= {min_sp}")
+print(f"   admitidos {len(selec)} de {len(d)} con sp_any >= {min_sp}")
 print("   los 8 mejores:")
 for _, r in d.head(8).iterrows():
-    print(f"     sp_both={r.sp_both:.2f} both={r.both:.2f} personas_max={r.max_people:g}  {r.video[:66]}")
+    print(f"     sp_any={r.sp_any:.2f} sp_both={r.sp_both:.2f} personas_max={r.max_people:g}  {r.video[:60]}")
 if len(desc):
-    print(f"   descartados: sp_both entre {desc.sp_both.min():.2f} y {desc.sp_both.max():.2f}")
-print("   OJO: sp_both es un ranker del detector (YOLO), no una promesa de frames medibles.")
-print("   Calibrado sobre los 29 clips con OpenPose hecho: conf 0.7 -> 4/4 buenos y 1/25 falsos.")
+    print(f"   descartados: sp_any entre {desc.sp_any.min():.2f} y {desc.sp_any.max():.2f}")
+print("   OJO: sp_any es un ranker del detector (YOLO), no una promesa de frames medibles.")
+print("   Y una muneca vale: gesture_features.py calcula cada lado por separado (sp_both")
+print("   sigue en munecas.csv como ranking). Que esto sea cierto y no una intuicion se")
+print("   mide con tools/auditoria_criba.py sobre los clips que esta criba descarta.")
 PY
   ADM=$( { find "$OUT/videos/1_person" -name '*.mp4' || true; } | wc -l)
   conteo preseleccion admitidos "$ADM"
   coste "criba"
-  [ "$ADM" -gt 0 ] || abortar "la criba no admitió ningún clip: baja --min-sp-both (0.6-0.7) y repite --desde preseleccion" preseleccion
+  [ "$ADM" -gt 0 ] || abortar "la criba no admitió ningún clip: baja --min-sp-any (0.4-0.5) y repite --desde preseleccion" preseleccion
 fi
 
 # ============================================================ 5. OpenPose + Parquet
@@ -488,8 +599,40 @@ if hacer merge; then
   # 28 values were supplied") y, lo peor, Polymnia lo deja en exit 0.
   apartar "$OUT/${LOTE_NOMBRE}.duckdb"
   apartar "$OUT/${LOTE_NOMBRE}.duckdb.wal"
+  MERGE_RC=0
   corre "$OUT/logs/08_merge.log" "$POLY" merge --input_folder "$OUT" --n_persons 1 \
-        --db_name "$OUT/${LOTE_NOMBRE}.duckdb" || abortar "merge/hefesto devolvió error" merge
+        --db_name "$OUT/${LOTE_NOMBRE}.duckdb" \
+        --discard-report "$OUT/informes/descartados_sin_voz.tsv" \
+        --max-discard-pct "$MAX_SIN_VOZ_PCT" || MERGE_RC=$?
+  # Evidencia del descarte, tambien cuando el merge aborta por umbral: el clip que no tiene
+  # voz no se publica, pero su mp4 y su motivo quedan a la vista en el lote.
+  OUT_DIR="$OUT" "$PY" - <<'PY'
+import csv, os, shutil
+out = os.environ["OUT_DIR"]
+rep = os.path.join(out, "informes", "descartados_sin_voz.tsv")
+if not os.path.isfile(rep):
+    print("   descartes: 0 (hefesto no escribio reporte)")
+    raise SystemExit
+with open(rep, encoding="utf-8") as fh:
+    filas = list(csv.DictReader(fh, delimiter="\t"))
+destino = os.path.join(out, "videos", "descartados", "sin_voz")
+os.makedirs(destino, exist_ok=True)
+copiados = 0
+for r in filas:
+    clip = r.get("clip") or ""
+    origen = os.path.join(out, "videos", "1_person", clip + ".mp4")
+    if clip and os.path.isfile(origen):
+        shutil.copy2(origen, os.path.join(destino, clip + ".mp4"))
+        copiados += 1
+print(f"   descartes: {len(filas)} clips sin voz -> videos/descartados/sin_voz/ ({copiados} mp4)")
+for motivo in ("prosody_missing", "prosody_empty", "combined_empty"):
+    n = sum(1 for r in filas if r.get("reason") == motivo)
+    if n:
+        print(f"     {motivo}: {n}")
+PY
+  SINVOZ=$( { [ -f "$OUT/informes/descartados_sin_voz.tsv" ] && tail -n +2 "$OUT/informes/descartados_sin_voz.tsv" || true; } | wc -l )
+  conteo merge clips_sin_voz "$SINVOZ"
+  [ "${MERGE_RC:-0}" -eq 0 ] || abortar "merge/hefesto devolvió error (mira logs/08_merge.log: umbral de descartes o fallo de inserción)" merge
   [ -f "$OUT/${LOTE_NOMBRE}.duckdb" ] || abortar "no se creó $OUT/${LOTE_NOMBRE}.duckdb" merge
   "$DUCK" -readonly "$OUT/${LOTE_NOMBRE}.duckdb" -c "SELECT count(*) AS filas, count(DISTINCT id) AS clips FROM multi_data"
   # SIEMPRE con type_points: en `points` conviven 4 modelos (cara, pose, dos manos)
@@ -528,30 +671,32 @@ fi
 if hacer theia; then
   etapa "9/10  anotaciones visuales (Theia)"
   if [ "$SKIP_THEIA" -eq 1 ]; then
-    echo "   omitido por --skip-theia (final_videos saldrá con las 7 columnas de anotación a NULL)"
-  elif [ ! -f "$RAIZ/Polymnia/.env" ]; then
-    echo "   ⚠️  no hay Polymnia/.env con THEIA_API_BASE/THEIA_MODEL: se omite la anotación"
+    # El motivo se escribe DENTRO del lote, no solo al stdout: un lote sin
+    # anotaciones visuales no dejaba ni rastro dentro de el, y asi se fueron dos
+    # tandas sin que nadie viera que la etapa 9 no habia llegado a ejecutarse.
+    echo "omitido por --skip-theia: final_videos sale con las 7 columnas de anotacion a NULL" \
+      | tee "$OUT/logs/09_theia.log"
+    conteo theia clips_anotados 0
+    conteo theia clips_con_error 0
+    conteo theia motivo skip_theia_flag
   else
-    # Aguas arriba, theia.py define el default de --api-key como
-    # os.environ.get("THEIA_API_KEY", "none") en la linea 488, parsea argumentos en la 499 y
-    # SOLO despues carga el .env (load_env, linea 501). args.api_key se queda con la cadena
-    # "none", que es truthy, y la linea 503 ("args.api_key or os.environ...") ya no recupera
-    # la clave del .env: la peticion sale con "Bearer none" y el endpoint contesta 401.
-    # El endpoint y el modelo si se recuperan (su default es None), por eso el log ensenaba la
-    # URL y el modelo correctos con la clave falsa. Exportarla aqui lo evita. Medido: con la
-    # clave exportada, 'polymnia theia --limit 1' pasa de error=1 a ok=1.
-    for k in THEIA_API_BASE THEIA_API_KEY THEIA_MODEL; do
-      v=$(sed -n "s/^$k=//p" "$RAIZ/Polymnia/.env" | tail -1)
-      if [ -n "$v" ] && [ -z "${!k:-}" ]; then export "$k=$v"; fi
-    done
-    [ -n "${THEIA_API_KEY:-}" ] \
-      || echo "   ⚠️  no hay THEIA_API_KEY ni en el entorno ni en Polymnia/.env: las 7 anotaciones saldran NULL"
+    # Theia corre por defecto y sin exportar nada: theia.py carga el .env de la raiz
+    # del repo ANTES de resolver la configuracion. Aqui ya no se exporta ni se comprueba
+    # el .env, y esta bien que no se compruebe: si falta la configuracion, la etapa debe
+    # INTENTARSE y dejar el fallo escrito en logs/09_theia.log, no omitirse callada.
+    # (Lo que habia antes fallaba dos veces. Una: el default de --api-key se resolvia en
+    # el parser, antes de load_env, y la peticion salia con "Bearer none" -> 401. Dos: la
+    # comprobacion era [ -f "$RAIZ/Polymnia/.env" ], pero RAIZ ya ES el repo Polymnia, asi
+    # que preguntaba por Polymnia/Polymnia/.env, que no existe -> la etapa se saltaba SIEMPRE.)
+    [ -f "$POLY_ROOT/.env" ] \
+      || echo "   ⚠️  no hay $POLY_ROOT/.env: si tampoco exportas THEIA_API_BASE/THEIA_MODEL, la anotacion visual fallara"
     corre "$OUT/logs/09_theia.log" "$POLY" theia --input_folder "$OUT" --n_persons 1 \
           --db_name "$OUT/${LOTE_NOMBRE}.duckdb" || echo "   ⚠️  Theia terminó con avisos (intenta reintentar con --desde theia --force)"
     # el resumen de theia es una linea propia; sin ella el 401 pasa desapercibido
     grep -o "\[theia\] ok=[0-9]* error=[0-9]*" "$OUT/logs/09_theia.log" | tail -1 || true
     grep -m1 -o "401[^)]*" "$OUT/logs/09_theia.log" \
-      && echo "   ⚠️  401 CON la clave ya exportada: aqui si es la clave o el endpoint (mira logs/09_theia.log)"
+      && echo "   ⚠️  401: el endpoint rechazo la clave (mira la linea 'clave:' de logs/09_theia.log: dice de donde salio)"
+    grep -m1 -o "\[theia\] model=.*)" "$OUT/logs/09_theia.log" | tail -1 || true
     # theia inserta la fila tambien cuando falla, con la causa en `error`. Ojo: cuando va
     # BIEN deja error como cadena VACIA, no como NULL (medido: ok=4 y count(error IS NULL)=0),
     # asi que "IS NULL" a secas daria "0 anotados" en una pasada perfecta.
@@ -561,6 +706,11 @@ if hacer theia; then
              -c "SELECT count(*) FILTER (WHERE $SIN) FROM video_annotations" 2>/dev/null | tr -d '[:space:]' || true)
     FALL=$("$DUCK" -readonly -noheader -csv "$OUT/${LOTE_NOMBRE}.duckdb" \
              -c "SELECT count(*) FILTER (WHERE $CON) FROM video_annotations" 2>/dev/null | tr -d '[:space:]' || true)
+    # Guarda: un lote con 0 anotaciones no se publica. En la tanda de octubre el endpoint
+    # devolvio 403/429 y dos lotes salieron a final/ con las 7 columnas vacias (FREQ028_4,
+    # FREQ029). Los clips ya anotados quedan en la base: reanudar no repite trabajo.
+    "$PY" "$POLY_ROOT/tools/check_annotations.py" --db "$OUT/${LOTE_NOMBRE}.duckdb" \
+      || abortar "ningún clip quedó anotado (¿clave o endpoint de Theia?): no se publica un dataset sin anotación. Lo ya anotado sigue en la base; reintenta con --desde theia --force" theia
     if [ "${FALL:-?}" = "0" ]; then
       echo "   anotacion visual: ${ANOT:-?} clips con etiquetas, 0 con error"
     else
@@ -576,54 +726,86 @@ fi
 if hacer final; then
   etapa "10/10 dataset final (final_frames + final_videos + diccionario + README)"
   [ -e "$OUT/final" ] && [ "$FORCE" -eq 0 ] && abortar "ya existe $OUT/final (bórralo o usa --force)" final
-  [ -e "$OUT/final" ] && apartar "$OUT/final"
   ARGS=(--db_name "$OUT/${LOTE_NOMBRE}.duckdb" --tab "$OUT/tsv/efectivo.tsv"
         --offset "$OFFSET" --searchterm "$SEARCHTERM" --provenance "$PROCEDENCIA")
   [ "$EXTENDED" -eq 1 ] && ARGS+=(--extended)
+
+  # Regla de esta etapa: nada de lo que puede fallar se ejecuta YA despues de tocar la
+  # entrega. El orden viejo era al reves: se apartaba `final/` y SOLO DESPUES corria la
+  # pasada de medicion, asi que un abortazo dejaba el lote sin dataset publicado y sin nada
+  # nuevo que publicar (ha pasado: un --searchterm equivocado hacia saltar esa pasada y el
+  # `final/` entregado llevaba ya un rato en informes/_anterior/). Ahora lo fragile se
+  # escribe a scratch oculto y el unico punto sin retorno es el rename del final.
+  apartar "$OUT/.medicion"
+  apartar "$OUT/.publicando"
+  apartar "$OUT/.docs_nuevos"
+  mkdir -p "$OUT/.docs_nuevos"
+  # Basura de scratch: `mkdir .docs_nuevos` ocurre antes de lo que puede fallar, asi que un
+  # abort dejaba el directorio (vacio) dentro del lote entregado, y el run siguiente lo
+  # apartaba a informes/_anterior/ como si fuera un derivado real (ha pasado: hay uno vacio
+  # ahi). Los tres son scratch por definicion: NUNCA son la entrega, que llega a su sitio por
+  # rename. Por eso se pueden borrar al salir pase lo que pase. `OUT` es absoluta (caso de
+  # arriba); el test extra es para que un OUT vacio no pueda convertirse en un `rm -rf /...`.
+  trap '[ -n "${OUT:-}" ] && rm -rf "$OUT/.medicion" "$OUT/.publicando" "$OUT/.docs_nuevos" || true' EXIT
 
   # El README se publica DENTRO de final/ y entra en el sha256 del manifiesto, asi que tiene que
   # existir ANTES de publicar; y para hablar de cobertura tiene que leer los parquet ya calculados.
   # Se resuelve con una pasada de medicion a .medicion: mismas entradas, mismos numeros. Abajo se
   # compara byte a byte antes de fiarnos del documento, asi que no puede describir otro dataset.
+  README_TMP="$OUT/.docs_nuevos/README_entrega.md"
   if [ "$DICCIONARIO" -eq 1 ]; then
-    apartar "$OUT/.medicion"
-    apartar "$OUT/informes/DICCIONARIO_COLUMNAS.csv"
-    apartar "$OUT/DICCIONARIO_COLUMNAS.md"
-    apartar "$OUT/informes/README_entrega.md"
     corre "$OUT/logs/10a_medicion.log" "$PY" "$RAIZ/final_dataset/final_dataset.py" \
       "${ARGS[@]}" --output_folder "$OUT/.medicion" \
-      || abortar "la pasada de medicion falló (sin ella no hay diccionario; prueba --sin-diccionario)" final
+      || abortar "la pasada de medicion falló (sin ella no hay diccionario; prueba --sin-diccionario). La entrega anterior sigue intacta" final
     corre "$OUT/logs/10b_diccionario.log" "$PY" "$RAIZ/final_dataset/diccionario_columnas.py" \
-      --final "$OUT/.medicion" --csv "$OUT/informes/DICCIONARIO_COLUMNAS.csv" \
-      --md "$OUT/DICCIONARIO_COLUMNAS.md" --readme "$OUT/informes/README_entrega.md" \
-      || abortar "el diccionario falló. Si dice 'undocumented columns' es bueno: el código ha ganado una columna que nadie describió; documentala en gesture_features.py y relanza" final
+      --final "$OUT/.medicion" --csv "$OUT/.docs_nuevos/DICCIONARIO_COLUMNAS.csv" \
+      --md "$OUT/.docs_nuevos/DICCIONARIO_COLUMNAS.md" --readme "$README_TMP" \
+      || abortar "el diccionario falló. Si dice 'undocumented columns' es bueno: el código ha ganado una columna que nadie describió; documentala en gesture_features.py y relanza. La entrega anterior sigue intacta" final
     NDIC=$("$PY" -c "import pandas as pd,sys; print(len(pd.read_csv(sys.argv[1])))" \
-            "$OUT/informes/DICCIONARIO_COLUMNAS.csv")
+            "$OUT/.docs_nuevos/DICCIONARIO_COLUMNAS.csv")
     [ "${NDIC:-0}" -gt 0 ] || abortar "el diccionario salió vacío" final
     conteo final columnas_documentadas "$NDIC"
-    [ -n "$README" ] || README="$OUT/informes/README_entrega.md"
-    echo "   diccionario: $NDIC columnas documentadas (informes/DICCIONARIO_COLUMNAS.csv)"
+    echo "   diccionario: $NDIC columnas documentadas (se publican junto con el dataset)"
     echo "   README: generado con los números medidos en este lote"
   fi
 
-  [ -n "$README" ] && ARGS+=(--readme "$README")
-  if [ -n "$README" ] && [ "$README" != "$OUT/informes/README_entrega.md" ]; then
+  README_PUBLICAR="$README"
+  [ -z "$README_PUBLICAR" ] && [ "$DICCIONARIO" -eq 1 ] && README_PUBLICAR="$README_TMP"
+  [ -n "$README_PUBLICAR" ] && ARGS+=(--readme "$README_PUBLICAR")
+  if [ -n "$README" ]; then
     echo "   ⚠️  publicando TU README como DATASET.md: nadie comprueba sus números. Los de la"
     echo "      tanda vieja (14,5% muñeca derecha, 3 clips bimanuales) no sirven para esta."
   fi
-  [ -z "$README" ] && echo "   sin DATASET.md en final/ (--sin-diccionario sin README generado)"
+  [ -z "$README_PUBLICAR" ] && echo "   sin DATASET.md en final/ (--sin-diccionario sin README generado)"
   corre "$OUT/logs/10_final.log" "$PY" "$RAIZ/final_dataset/final_dataset.py" \
-    "${ARGS[@]}" --output_folder "$OUT/final" \
-    || abortar "final_dataset.py devolvió error" final
+    "${ARGS[@]}" --output_folder "$OUT/.publicando" \
+    || abortar "final_dataset.py devolvió error (la entrega anterior sigue en su sitio)" final
 
   if [ "$DICCIONARIO" -eq 1 ]; then
     for fichero in final_frames.parquet final_videos.parquet final_frames.csv final_videos.csv; do
-      cmp -s "$OUT/.medicion/$fichero" "$OUT/final/$fichero" \
-        || abortar "$fichero difiere entre la medición y la publicación: el diccionario y el README describirían otro dataset" final
+      cmp -s "$OUT/.medicion/$fichero" "$OUT/.publicando/$fichero" \
+        || abortar "$fichero difiere entre la medición y la publicación: el diccionario y el README describirían otro dataset. Nada publicado aun: la entrega anterior sigue en su sitio" final
     done
-    rm -rf "$OUT/.medicion"
-    echo "   comprobado: lo publicado es byte a byte lo que el diccionario describe"
+    echo "   comprobado: lo que se va a publicar es byte a byte lo que el diccionario describe"
   fi
+
+  # --------------------------------------- punto sin retorno ---------------------------
+  # A partir de aqui ya no hay nada que pueda fallar por motivos «normales» (medir,
+  # diccionario, publicar y comparar ya pasaron con exito). Lo unico que se aparta es lo
+  # que se sustituye, y se sustituye por lo que esta en scratch. Se separan dos rename
+  # cortos para que la ventana sin entrega sea lo mas pequena posible.
+  if [ "$DICCIONARIO" -eq 1 ]; then
+    apartar "$OUT/informes/DICCIONARIO_COLUMNAS.csv"
+    apartar "$OUT/DICCIONARIO_COLUMNAS.md"
+    apartar "$OUT/informes/README_entrega.md"
+    mv "$OUT/.docs_nuevos/DICCIONARIO_COLUMNAS.csv" "$OUT/informes/DICCIONARIO_COLUMNAS.csv"
+    mv "$OUT/.docs_nuevos/DICCIONARIO_COLUMNAS.md" "$OUT/DICCIONARIO_COLUMNAS.md"
+    mv "$README_TMP" "$OUT/informes/README_entrega.md"
+    echo "   diccionario publicado: informes/DICCIONARIO_COLUMNAS.csv ($NDIC columnas)"
+  fi
+  apartar "$OUT/final"
+  mv "$OUT/.publicando" "$OUT/final"
+  rm -rf "$OUT/.medicion" "$OUT/.docs_nuevos"
   OUT_DIR="$OUT" "$PY" - <<'PY'
 import json, os, pandas as pd
 f = os.path.join(os.environ["OUT_DIR"], "final")
@@ -677,11 +859,16 @@ TOTAL=$(( $(date +%s) - INICIO_TOTAL ))
   echo "  vive en \`Polymnia/failed_downloads.log\` y hace append entre pasadas."
   echo "* \`munecas.csv\` — el score de todos los clips, incluidos los descartados."
   echo "* \`videos/descartados/<motivo>/\` — por qué se cayó cada clip."
+  echo "* \`informes/descartados_sin_voz.tsv\` — los clips sin voz/prosodia que hefesto no metió"
+  echo "  en la base (clip, motivo, origen). El umbral \`--max-sin-voz-pct\` (defecto 5 %) para el"
+  echo "  lote cuando el patrón no es un hablante mudo sino una extracción de voz rota."
   echo "* \`informes/cobertura_munecas.csv\` — la cobertura REAL de muñeca medida con OpenPose"
   echo "  (filtrando \`type_points='pose_keypoints'\`; sin ese filtro los puntos 4 y 7 son cejas y nudillos)."
   echo "* \`final/manifest.json\` — fórmulas, unidades, constantes y SHA-256 de cada fichero publicado."
-  echo "* \`logs/09_theia.log\` — si sale 401, la clave de \`Polymnia/.env\` no vale y las 7"
-  echo "  anotaciones visuales salen NULL (el resto del dataset no se resiente)."
+  echo "* \`logs/09_theia.log\` — la anotación visual va por defecto (lee \`Polymnia/.env\` sin que
+  exportes nada). Si sale 401/403 el lote **aborta** en esta etapa: no se publica un dataset sin
+  anotación. Lo ya anotado queda en la base y se reintenta con \`--desde theia --force\`. Si el
+  fichero dice «omitido por --skip-theia», es que se pidió así."
 } > "$OUT/RENDIMIENTO.md"
 
 echo
