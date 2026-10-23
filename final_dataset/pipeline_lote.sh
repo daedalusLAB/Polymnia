@@ -60,6 +60,7 @@ if [ -z "$PESO" ]; then
 fi
 LIMIT=""; GATE=0; MIN_VISIBLE=80; EXTENDED=1; README=""; SKIP_THEIA=0
 LIMPIEZA=1; CRITERIO_LIMPIEZA=todo; DICCIONARIO=1
+MAX_SIN_VOZ_PCT=5
 DESDE=tsv; HASTA=final; FORCE=0
 
 uso() {
@@ -93,6 +94,9 @@ Opciones:
   --sin-limpiar      NO limpiar candidatos fantasma (por defecto SÍ: sin eso, un solo frame
                      ambiguo manda el clip a 2_persons y el dataset sale vacío)
   --criterio-limpieza C  todo|torso|negro|nada (defecto todo; nada = solo informar)
+  --max-sin-voz-pct F  umbral de clips descartados por falta de voz/prosodia que para el lote
+                     (defecto 5; 0 lo desactiva). El clip descartado NO se publica y queda en
+                     videos/descartados/sin_voz/ e informes/descartados_sin_voz.tsv
   --desde ETAPA      reanudar desde una etapa asumiendo que las anteriores ya están
   --hasta ETAPA      parar después de una etapa
   --force            permitir reutilizar una carpeta de lote ya existente
@@ -129,6 +133,7 @@ while [ $# -gt 0 ]; do
     --sin-diccionario) DICCIONARIO=0; shift ;;
     --sin-limpiar) LIMPIEZA=0; shift ;;
     --criterio-limpieza) CRITERIO_LIMPIEZA="$2"; shift 2 ;;
+    --max-sin-voz-pct) MAX_SIN_VOZ_PCT="$2"; shift 2 ;;
     --desde) DESDE="$2"; shift 2 ;;
     --hasta) HASTA="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
@@ -163,7 +168,7 @@ case "$OUT" in
 esac
 
 mkdir -p "$OUT"/{tsv,logs,informes} "$OUT"/videos/{raw,masked,1_person} \
-       "$OUT"/videos/descartados/{asd_sin_mascara,preseleccion_sp_bajo,clasificado_multipersona}
+       "$OUT"/videos/descartados/{asd_sin_mascara,preseleccion_sp_bajo,clasificado_multipersona,sin_voz}
 
 # ------------------------------------------------------------------ utilidades
 INICIO_TOTAL=$(date +%s)
@@ -509,8 +514,40 @@ if hacer merge; then
   # 28 values were supplied") y, lo peor, Polymnia lo deja en exit 0.
   apartar "$OUT/${LOTE_NOMBRE}.duckdb"
   apartar "$OUT/${LOTE_NOMBRE}.duckdb.wal"
+  MERGE_RC=0
   corre "$OUT/logs/08_merge.log" "$POLY" merge --input_folder "$OUT" --n_persons 1 \
-        --db_name "$OUT/${LOTE_NOMBRE}.duckdb" || abortar "merge/hefesto devolvió error" merge
+        --db_name "$OUT/${LOTE_NOMBRE}.duckdb" \
+        --discard-report "$OUT/informes/descartados_sin_voz.tsv" \
+        --max-discard-pct "$MAX_SIN_VOZ_PCT" || MERGE_RC=$?
+  # Evidencia del descarte, tambien cuando el merge aborta por umbral: el clip que no tiene
+  # voz no se publica, pero su mp4 y su motivo quedan a la vista en el lote.
+  OUT_DIR="$OUT" "$PY" - <<'PY'
+import csv, os, shutil
+out = os.environ["OUT_DIR"]
+rep = os.path.join(out, "informes", "descartados_sin_voz.tsv")
+if not os.path.isfile(rep):
+    print("   descartes: 0 (hefesto no escribio reporte)")
+    raise SystemExit
+with open(rep, encoding="utf-8") as fh:
+    filas = list(csv.DictReader(fh, delimiter="\t"))
+destino = os.path.join(out, "videos", "descartados", "sin_voz")
+os.makedirs(destino, exist_ok=True)
+copiados = 0
+for r in filas:
+    clip = r.get("clip") or ""
+    origen = os.path.join(out, "videos", "1_person", clip + ".mp4")
+    if clip and os.path.isfile(origen):
+        shutil.copy2(origen, os.path.join(destino, clip + ".mp4"))
+        copiados += 1
+print(f"   descartes: {len(filas)} clips sin voz -> videos/descartados/sin_voz/ ({copiados} mp4)")
+for motivo in ("prosody_missing", "prosody_empty", "combined_empty"):
+    n = sum(1 for r in filas if r.get("reason") == motivo)
+    if n:
+        print(f"     {motivo}: {n}")
+PY
+  SINVOZ=$( { [ -f "$OUT/informes/descartados_sin_voz.tsv" ] && tail -n +2 "$OUT/informes/descartados_sin_voz.tsv" || true; } | wc -l )
+  conteo merge clips_sin_voz "$SINVOZ"
+  [ "${MERGE_RC:-0}" -eq 0 ] || abortar "merge/hefesto devolvió error (mira logs/08_merge.log: umbral de descartes o fallo de inserción)" merge
   [ -f "$OUT/${LOTE_NOMBRE}.duckdb" ] || abortar "no se creó $OUT/${LOTE_NOMBRE}.duckdb" merge
   "$DUCK" -readonly "$OUT/${LOTE_NOMBRE}.duckdb" -c "SELECT count(*) AS filas, count(DISTINCT id) AS clips FROM multi_data"
   # SIEMPRE con type_points: en `points` conviven 4 modelos (cara, pose, dos manos)
@@ -732,6 +769,9 @@ TOTAL=$(( $(date +%s) - INICIO_TOTAL ))
   echo "  vive en \`Polymnia/failed_downloads.log\` y hace append entre pasadas."
   echo "* \`munecas.csv\` — el score de todos los clips, incluidos los descartados."
   echo "* \`videos/descartados/<motivo>/\` — por qué se cayó cada clip."
+  echo "* \`informes/descartados_sin_voz.tsv\` — los clips sin voz/prosodia que hefesto no metió"
+  echo "  en la base (clip, motivo, origen). El umbral \`--max-sin-voz-pct\` (defecto 5 %) para el"
+  echo "  lote cuando el patrón no es un hablante mudo sino una extracción de voz rota."
   echo "* \`informes/cobertura_munecas.csv\` — la cobertura REAL de muñeca medida con OpenPose"
   echo "  (filtrando \`type_points='pose_keypoints'\`; sin ese filtro los puntos 4 y 7 son cejas y nudillos)."
   echo "* \`final/manifest.json\` — fórmulas, unidades, constantes y SHA-256 de cada fichero publicado."

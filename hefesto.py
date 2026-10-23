@@ -10,9 +10,24 @@ import duckdb
 import argparse
 from datetime import datetime, timezone
 
-# Contadores globales para discrepancias
-discrepancy_count = 0
-discrepancy_files = []
+# Discrepancias por causa. Solo las tres primeras significan "no hay voz que alinear"
+# y se descartan (el clip no entra, el lote sigue): un fallo de insercion es un bug y
+# sigue abortando. Ver INVENTARIO_FALLOS_LOTES.md §3.
+DISCARD_REASONS = ("prosody_missing", "prosody_empty", "combined_empty")
+DEFAULT_MAX_DISCARD_PCT = 5.0
+
+discarded = {motivo: [] for motivo in DISCARD_REASONS}   # motivo -> [(clip, origen)]
+fatal_errors = []                                        # rutas con fallo de insercion
+
+
+def clip_name(path: str) -> str:
+    """Nombre del clip a partir de cualquiera de sus parquets."""
+    return os.path.basename(path).replace(".parquet", "")
+
+
+def record_discard(motivo: str, path: str) -> None:
+    """Anota un descarte con su motivo; nunca en silencio."""
+    discarded[motivo].append((clip_name(path), path))
 
 def prepare_prosody_data(prosody_path: str) -> pd.DataFrame:
     """
@@ -109,7 +124,6 @@ def process_single_file(parquet_file_path: str, db_file: str) -> None:
     """
     Process a single pose file and related files.
     """
-    global discrepancy_count, discrepancy_files
     print(f"Processing file: {parquet_file_path}")
 
     # Derivar rutas de archivos relacionados
@@ -119,15 +133,13 @@ def process_single_file(parquet_file_path: str, db_file: str) -> None:
     # Verificar existencia del archivo de prosodia
     if not os.path.exists(prosody_file_path):
         print(f"[WARNING] Prosody file not found: {prosody_file_path}")
-        discrepancy_count += 1
-        discrepancy_files.append(prosody_file_path)
+        record_discard("prosody_missing", prosody_file_path)
         return
     
     prosody_data = prepare_prosody_data(prosody_file_path)
     if prosody_data.empty:
         print(f"[WARNING] Prosody data is empty for file: {prosody_file_path}")
-        discrepancy_count += 1
-        discrepancy_files.append(prosody_file_path)
+        record_discard("prosody_empty", prosody_file_path)
         return
 
     words_data = prepare_words_data(words_file_path)
@@ -136,8 +148,7 @@ def process_single_file(parquet_file_path: str, db_file: str) -> None:
     
     if combined_data.empty:
         print(f"[WARNING] Combined data is empty for file: {parquet_file_path}")
-        discrepancy_count += 1
-        discrepancy_files.append(parquet_file_path)
+        record_discard("combined_empty", parquet_file_path)
         return
     
     try:
@@ -151,8 +162,21 @@ def process_single_file(parquet_file_path: str, db_file: str) -> None:
         print(f"File processed and inserted into DB: {parquet_file_path}")
     except Exception as e:
         print(f"[ERROR] Failed to insert data from {parquet_file_path} into DuckDB: {e}")
-        discrepancy_count += 1
-        discrepancy_files.append(parquet_file_path)
+        fatal_errors.append(parquet_file_path)
+
+
+def write_discard_report(path: str) -> None:
+    """TSV de descartes: una fila por clip, con motivo y origen. Sirve de evidencia."""
+    carpeta = os.path.dirname(path)
+    if carpeta:
+        os.makedirs(carpeta, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("clip\treason\tsource\n")
+        for motivo in DISCARD_REASONS:
+            for clip, origen in discarded[motivo]:
+                fh.write(f"{clip}\t{motivo}\t{origen}\n")
+    print(f"Discard report: {path}")
+
 
 def main() -> None:
     """
@@ -162,6 +186,13 @@ def main() -> None:
     parser.add_argument("-i", "--input_folder", type=str, required=True, help="Path to the input folder")
     parser.add_argument("-n", "--n_persons", type=str, required=True, help="Number of persons")
     parser.add_argument("-d", "--db_name", type=str, default="minos.duckdb", help="Path to DuckDB database file")
+    parser.add_argument("--discard-report", type=str, default=None,
+                        help="Escribe aqui el TSV de clips descartados (clip, motivo, origen)")
+    parser.add_argument("--max-discard-pct", type=float, default=DEFAULT_MAX_DISCARD_PCT,
+                        help="Umbral de descartes (%% de los clips) que para el lote; 0 lo desactiva "
+                             "(defecto %(default)s)")
+    parser.add_argument("--strict-discard", action="store_true",
+                        help="Cualquier descarte aborta el lote: conducta vieja, para depurar")
     args = parser.parse_args()
     
     n_persons = f"{args.n_persons}_persons"
@@ -181,19 +212,52 @@ def main() -> None:
         file_path = os.path.join(parquet_dir, parquet_file)
         process_single_file(file_path, args.db_name)
     
-    # Imprimir resumen final de discrepancias
-    print(f"\nTotal discrepancies: {discrepancy_count}")
-    if discrepancy_files:
+    # ---------------------------------------------------------------- resumen
+    total_discards = sum(len(v) for v in discarded.values())
+    total_fatal = len(fatal_errors)
+    total_clips = len(parquet_files)
+    pct = (100.0 * total_discards / total_clips) if total_clips else 0.0
+
+    # La linea historica se mantiene: la leen scripts y logs viejos.
+    print(f"\nTotal discrepancies: {total_discards + total_fatal}")
+    print("Descartados: " + " ".join(f"{m}={len(discarded[m])}" for m in DISCARD_REASONS))
+    if total_fatal:
+        print(f"Errores fatales: {total_fatal}")
+    if total_discards:
+        print(f"Descartes: {total_discards}/{total_clips} ({pct:.1f} %)")
+    issues = [origen for motivo in DISCARD_REASONS for _, origen in discarded[motivo]] + fatal_errors
+    if issues:
         print("Files with issues:")
-        for f in discrepancy_files:
+        for f in issues:
             print(f)
-    # Cada discrepancia son filas de un clip que nunca llegaron a multi_data. Si esto
-    # termina en 0, quien llama (create_dataset.py, un script de lote) sigue hacia las
-    # etapas de pose y gestos con una base a la que le faltan clips, y lo publica igual.
+
+    if args.discard_report:
+        write_discard_report(args.discard_report)
+
+    # Un fallo de insercion no es un clip mudo: sigue abortando.
+    if total_fatal:
+        print(f"[ERROR] {total_fatal} clip(s) no se pudieron insertar en multi_data "
+              f"(bug de datos/esquema, no un clip sin voz)")
+        sys.exit(1)
+
+    # Politica: descartar el clip, no el lote. Pero un lote que descarta todo, o que pasa
+    # del umbral, no es un corpus mudo: es una extraccion de voz rota.
+    if total_discards:
+        if args.strict_discard:
+            print("[ERROR] --strict-discard: cualquier descarte aborta")
+            sys.exit(1)
+        if total_clips and total_discards == total_clips:
+            print("[ERROR] no sobrevive ningun clip: el lote se quedaria sin datos")
+            sys.exit(1)
+        if args.max_discard_pct and pct > args.max_discard_pct:
+            print(f"[ERROR] {total_discards} de {total_clips} clips descartados ({pct:.1f} %) "
+                  f"supera el umbral {args.max_discard_pct:g} %: revisa la extraccion de voz "
+                  f"(no es un corpus mudo)")
+            sys.exit(1)
+
     # Una carpeta de parquets que no existe NO entra aqui: un bucket <n>_persons vacio
     # es un resultado normal al recorrer las clasificaciones.
-    if discrepancy_count:
-        sys.exit(1)
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()
