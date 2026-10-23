@@ -61,6 +61,7 @@ fi
 LIMIT=""; GATE=0; MIN_VISIBLE=80; EXTENDED=1; README=""; SKIP_THEIA=0
 LIMPIEZA=1; CRITERIO_LIMPIEZA=todo; DICCIONARIO=1
 MAX_SIN_VOZ_PCT=5
+TSV_SET=0; OFFSET_SET=0; SEARCHTERM_SET=0; LIMIT_SET=0; PRINT_CONFIG=0
 DESDE=tsv; HASTA=final; FORCE=0
 
 uso() {
@@ -99,17 +100,24 @@ Opciones:
                      videos/descartados/sin_voz/ e informes/descartados_sin_voz.tsv
   --desde ETAPA      reanudar desde una etapa asumiendo que las anteriores ya están
   --hasta ETAPA      parar después de una etapa
+  --print-config     imprime el tsv, offset, searchterm y limite resueltos y sale (0),
+                     sin crear ni tocar nada
   --force            permitir reutilizar una carpeta de lote ya existente
                      (lo que se sustituye se aparta a informes/_anterior/<hora>/, no se borra)
+
+Con lo mínimo, una tanda completa es:
+  polymnia lote --lote lotes/FREQ013
+El TSV se busca por el nombre del lote (MULTIFLOW_TSVs/*/Recurrence_Tabulations/<LOTE>_Tab.txt,
+POLYMNIA_TSV_DIR, la copia del propio lote) y el searchterm se deduce del nombre del lote.
 EOF
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tsv) TSV="$2"; shift 2 ;;
+    --tsv) TSV="$2"; TSV_SET=1; shift 2 ;;
     --lote) LOTE="$2"; shift 2 ;;
-    --offset) OFFSET="$2"; shift 2 ;;
-    --searchterm) SEARCHTERM="$2"; shift 2 ;;
+    --offset) OFFSET="$2"; OFFSET_SET=1; shift 2 ;;
+    --searchterm) SEARCHTERM="$2"; SEARCHTERM_SET=1; shift 2 ;;
     --min-sp-any) MIN_SP_ANY="$2"; shift 2 ;;
     # --min-sp-both se retira, y NO se re-significa: quien lo pasa esperaba la regla estricta
     # de las dos muñecas, y aceptarselo interpretándolo como sp_any ensancharía la admisión
@@ -124,7 +132,7 @@ while [ $# -gt 0 ]; do
     --frames) FRAMES="$2"; shift 2 ;;
     --device) DEVICE="$2"; shift 2 ;;
     --peso) PESO="$2"; shift 2 ;;
-    --limit) LIMIT="$2"; shift 2 ;;
+    --limit) LIMIT="$2"; LIMIT_SET=1; shift 2 ;;
     --gate) GATE=1; shift ;;
     --min-visible-percent) MIN_VISIBLE="$2"; shift 2 ;;
     --no-extended) EXTENDED=0; shift ;;
@@ -137,14 +145,14 @@ while [ $# -gt 0 ]; do
     --desde) DESDE="$2"; shift 2 ;;
     --hasta) HASTA="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
+    --print-config) PRINT_CONFIG=1; shift ;;
     -h|--help) uso; exit 0 ;;
     *) echo "❌ opción desconocida: $1" >&2; uso; exit 1 ;;
   esac
 done
 
-[ -n "$TSV" ] || { echo "❌ falta --tsv" >&2; uso; exit 1; }
-[ -f "$TSV" ] || { echo "❌ no existe el TSV: $TSV" >&2; exit 1; }
-TSV="$(readlink -f "$TSV")"
+[ -f "$TSV" ] || [ -z "$TSV" ] || { echo "❌ no existe el TSV: $TSV" >&2; exit 1; }
+[ -z "$TSV" ] || TSV="$(readlink -f "$TSV")"
 for ruta in "$POLY" "$PY" "$DUCK"; do
   [ -x "$ruta" ] || { echo "❌ falta $ruta" >&2; exit 1; }
 done
@@ -160,12 +168,67 @@ case "$LOTE" in /*) OUT="$LOTE" ;; *) OUT="$PWD/$LOTE" ;; esac
 # el nombre de la base sale de la carpeta, no de --lote: con --lote /ruta/absoluta,
 # "$OUT/${LOTE_NOMBRE}.duckdb" habria dado /ruta/absoluta//ruta/absoluta.duckdb
 LOTE_NOMBRE="$(basename "$OUT")"
-if [ -e "$OUT" ] && [ "$FORCE" -eq 0 ] && [ "$I_DESDE" -eq 0 ]; then
+if [ -e "$OUT" ] && [ "$FORCE" -eq 0 ] && [ "$I_DESDE" -eq 0 ] && [ "$PRINT_CONFIG" -eq 0 ]; then
   echo "❌ $OUT ya existe. Usa otro --lote, o --force para reutilizarla." >&2; exit 1
 fi
 case "$OUT" in
   */entrega_*|*/entrega_*) echo "❌ no montes un lote dentro de una entrega ($OUT)" >&2; exit 1 ;;
 esac
+
+# ------------------------------------------- parametros recordados y derivados del lote
+# Una sola orden basta: `--lote lotes/FREQ013`. Lo que no se pasa se deduce del nombre del
+# lote; y si el lote ya existia, se recupera de informes/parametros.json (lo escribe la
+# etapa 1) para que un reanudado no salga con otro --offset que el de la descarga.
+PARAMS="$OUT/informes/parametros.json"
+param() {  # param <clave>: valor guardado, o nada
+  [ -f "$PARAMS" ] || return 0
+  "$PY" -c 'import json,sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    raise SystemExit
+v = d.get(sys.argv[2])
+print("" if v is None else v)' "$PARAMS" "$1" 2>/dev/null || true
+}
+if [ -f "$PARAMS" ]; then
+  if [ "$OFFSET_SET" -eq 0 ]; then v="$(param offset)"; if [ -n "$v" ]; then OFFSET="$v"; OFFSET_SET=1; fi; fi
+  if [ "$SEARCHTERM_SET" -eq 0 ]; then v="$(param searchterm)"; if [ -n "$v" ]; then SEARCHTERM="$v"; SEARCHTERM_SET=1; fi; fi
+  if [ "$LIMIT_SET" -eq 0 ]; then v="$(param limit)"; if [ -n "$v" ]; then LIMIT="$v"; LIMIT_SET=1; fi; fi
+fi
+if [ -z "$TSV" ]; then
+  # Los tabulados viven en MULTIFLOW_TSVs/<campaña>/Recurrence_Tabulations/: se busca en
+  # cualquiera de las campañas (tanvir, ayesha, ...) en vez de clavar una carpeta.
+  for candidato in "$OUT/tsv/${LOTE_NOMBRE}_Tab.txt" \
+                   "${POLYMNIA_TSV_DIR:+${POLYMNIA_TSV_DIR}/${LOTE_NOMBRE}_Tab.txt}" \
+                   $PWD/MULTIFLOW_TSVs/*/Recurrence_Tabulations/${LOTE_NOMBRE}_Tab.txt \
+                   $RAIZ/../MULTIFLOW_TSVs/*/Recurrence_Tabulations/${LOTE_NOMBRE}_Tab.txt \
+                   $RAIZ/MULTIFLOW_TSVs/*/Recurrence_Tabulations/${LOTE_NOMBRE}_Tab.txt \
+                   $PWD/MULTIFLOW_TSVs/*/${LOTE_NOMBRE}_Tab.txt \
+                   "$RAIZ/../MULTIFLOW_TSVs/${LOTE_NOMBRE}_Tab.txt" \
+                   "$RAIZ/MULTIFLOW_TSVs/${LOTE_NOMBRE}_Tab.txt"; do
+    if [ -n "$candidato" ] && [ -f "$candidato" ]; then TSV="$candidato"; break; fi
+  done
+fi
+if [ "$SEARCHTERM_SET" -eq 0 ]; then
+  SEARCHTERM="$(printf '%s' "$LOTE_NOMBRE" | tr 'A-Z' 'a-z')"
+fi
+if [ -z "$TSV" ]; then
+  echo "❌ no encuentro el TSV de $LOTE_NOMBRE: pásalo con --tsv" >&2
+  echo "   (busqué en \$OUT/tsv, \$POLYMNIA_TSV_DIR, ./MULTIFLOW_TSVs y ../MULTIFLOW_TSVs)" >&2
+  exit 1
+fi
+[ -f "$TSV" ] || { echo "❌ no existe el TSV: $TSV" >&2; exit 1; }
+TSV="$(readlink -f "$TSV")"
+
+if [ "$PRINT_CONFIG" -eq 1 ]; then
+  echo "lote:       $LOTE_NOMBRE"
+  echo "tsv:        $TSV"
+  echo "offset:     $OFFSET"
+  echo "searchterm: $SEARCHTERM"
+  echo "limit:      ${LIMIT:-(sin límite)}"
+  echo "etapas:     ${ORDEN[*]:I_DESDE:I_HASTA-I_DESDE+1}"
+  exit 0
+fi
 
 mkdir -p "$OUT"/{tsv,logs,informes} "$OUT"/videos/{raw,masked,1_person} \
        "$OUT"/videos/descartados/{asd_sin_mascara,preseleccion_sp_bajo,clasificado_multipersona,sin_voz}
@@ -289,6 +352,28 @@ if malas[:5]:
     print(f"   ⚠️  líneas con pocos campos: {malas[:5]}")
 PY
   conteo tsv lineas_tsv "$NLINES"
+  # Parametros de ESTA pasada: la etapa final y cualquier reanudado los recuperan de aqui.
+  OUT_DIR="$OUT" P_TSV="$TSV" P_OFFSET="$OFFSET" P_SEARCHTERM="$SEARCHTERM" P_LIMIT="$LIMIT" "$PY" - <<'PY'
+import hashlib, json, os
+out = os.environ["OUT_DIR"]
+def sha(ruta):
+    h = hashlib.sha256()
+    with open(ruta, "rb") as fh:
+        for bloque in iter(lambda: fh.read(1 << 20), b""):
+            h.update(bloque)
+    return h.hexdigest()
+limite = os.environ.get("P_LIMIT") or ""
+datos = {
+    "offset": float(os.environ["P_OFFSET"]),
+    "searchterm": os.environ["P_SEARCHTERM"],
+    "limit": int(limite) if limite else None,
+    "tsv": os.path.basename(os.environ.get("P_TSV") or ""),
+    "tsv_sha256": sha(os.path.join(out, "tsv", "efectivo.tsv")),
+}
+with open(os.path.join(out, "informes", "parametros.json"), "w", encoding="utf-8") as fh:
+    json.dump(datos, fh, indent=2, ensure_ascii=False)
+print(f"   parámetros recordados: offset {datos['offset']:g}, searchterm {datos['searchterm']}")
+PY
   verificar_holgura
   coste "tabulado"
 fi
