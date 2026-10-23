@@ -621,6 +621,11 @@ if hacer theia; then
              -c "SELECT count(*) FILTER (WHERE $SIN) FROM video_annotations" 2>/dev/null | tr -d '[:space:]' || true)
     FALL=$("$DUCK" -readonly -noheader -csv "$OUT/${LOTE_NOMBRE}.duckdb" \
              -c "SELECT count(*) FILTER (WHERE $CON) FROM video_annotations" 2>/dev/null | tr -d '[:space:]' || true)
+    # Guarda: un lote con 0 anotaciones no se publica. En la tanda de octubre el endpoint
+    # devolvio 403/429 y dos lotes salieron a final/ con las 7 columnas vacias (FREQ028_4,
+    # FREQ029). Los clips ya anotados quedan en la base: reanudar no repite trabajo.
+    "$PY" "$POLY_ROOT/tools/check_annotations.py" --db "$OUT/${LOTE_NOMBRE}.duckdb" \
+      || abortar "ningún clip quedó anotado (¿clave o endpoint de Theia?): no se publica un dataset sin anotación. Lo ya anotado sigue en la base; reintenta con --desde theia --force" theia
     if [ "${FALL:-?}" = "0" ]; then
       echo "   anotacion visual: ${ANOT:-?} clips con etiquetas, 0 con error"
     else
@@ -776,8 +781,9 @@ TOTAL=$(( $(date +%s) - INICIO_TOTAL ))
   echo "  (filtrando \`type_points='pose_keypoints'\`; sin ese filtro los puntos 4 y 7 son cejas y nudillos)."
   echo "* \`final/manifest.json\` — fórmulas, unidades, constantes y SHA-256 de cada fichero publicado."
   echo "* \`logs/09_theia.log\` — la anotación visual va por defecto (lee \`Polymnia/.env\` sin que
-  exportes nada). Si sale 401, esa clave no vale: las 7 anotaciones salen NULL y el resto del
-  dataset no se resiente. Si el fichero dice «omitido por --skip-theia», es que se pidió así."
+  exportes nada). Si sale 401/403 el lote **aborta** en esta etapa: no se publica un dataset sin
+  anotación. Lo ya anotado queda en la base y se reintenta con \`--desde theia --force\`. Si el
+  fichero dice «omitido por --skip-theia», es que se pidió así."
 } > "$OUT/RENDIMIENTO.md"
 
 echo
