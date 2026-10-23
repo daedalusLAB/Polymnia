@@ -40,9 +40,12 @@ def tsv_de(base, lote, campana="tanvir"):
     return ruta
 
 
-def corre(base, *args):
+def corre(base, *args, env_extra=None):
     entorno = dict(os.environ)
     entorno.pop("POLYMNIA_TSV_DIR", None)
+    entorno.pop("POLYMNIA_THEIA_WORKERS", None)
+    if env_extra:
+        entorno.update(env_extra)
     return subprocess.run(["bash", PIPELINE, *args, "--print-config"],
                           cwd=base, capture_output=True, text=True, env=entorno)
 
@@ -108,6 +111,17 @@ def main():
         p = corre(tmp, "--lote", "lotes/FREQ777")
         check("encuentra el TSV en cualquier campaña", campo(p.stdout, "tsv") == otra,
               campo(p.stdout, "tsv"))
+
+        # 8. concurrencia de Theia: 4 por defecto, --theia-workers lo baja
+        check("Theia arranca con 4 workers", campo(p.stdout, "theia_workers") == "4",
+              campo(p.stdout, "theia_workers"))
+        p = corre(tmp, "--lote", "lotes/FREQ777", "--theia-workers", "1")
+        check("--theia-workers baja la concurrencia", campo(p.stdout, "theia_workers") == "1",
+              campo(p.stdout, "theia_workers"))
+        p = corre(tmp, "--lote", "lotes/FREQ777",
+                  env_extra={"POLYMNIA_THEIA_WORKERS": "2"})
+        check("POLYMNIA_THEIA_WORKERS también manda", campo(p.stdout, "theia_workers") == "2",
+              campo(p.stdout, "theia_workers"))
 
     print()
     if FAIL:

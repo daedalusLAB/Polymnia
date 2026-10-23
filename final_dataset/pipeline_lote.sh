@@ -61,6 +61,7 @@ fi
 LIMIT=""; GATE=0; MIN_VISIBLE=80; EXTENDED=1; README=""; SKIP_THEIA=0
 LIMPIEZA=1; CRITERIO_LIMPIEZA=todo; DICCIONARIO=1
 MAX_SIN_VOZ_PCT=5
+THEIA_WORKERS=${POLYMNIA_THEIA_WORKERS:-4}
 TSV_SET=0; OFFSET_SET=0; SEARCHTERM_SET=0; LIMIT_SET=0; PRINT_CONFIG=0
 DESDE=tsv; HASTA=final; FORCE=0
 
@@ -98,6 +99,8 @@ Opciones:
   --max-sin-voz-pct F  umbral de clips descartados por falta de voz/prosodia que para el lote
                      (defecto 5; 0 lo desactiva). El clip descartado NO se publica y queda en
                      videos/descartados/sin_voz/ e informes/descartados_sin_voz.tsv
+  --theia-workers N  peticiones simultaneas a Theia (defecto 4, o \$POLYMNIA_THEIA_WORKERS).
+                     Con varios lotes a la vez, baja a 1-2: el endpoint devuelve 429
   --desde ETAPA      reanudar desde una etapa asumiendo que las anteriores ya están
   --hasta ETAPA      parar después de una etapa
   --print-config     imprime el tsv, offset, searchterm y limite resueltos y sale (0),
@@ -142,6 +145,7 @@ while [ $# -gt 0 ]; do
     --sin-limpiar) LIMPIEZA=0; shift ;;
     --criterio-limpieza) CRITERIO_LIMPIEZA="$2"; shift 2 ;;
     --max-sin-voz-pct) MAX_SIN_VOZ_PCT="$2"; shift 2 ;;
+    --theia-workers) THEIA_WORKERS="$2"; shift 2 ;;
     --desde) DESDE="$2"; shift 2 ;;
     --hasta) HASTA="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
@@ -226,6 +230,7 @@ if [ "$PRINT_CONFIG" -eq 1 ]; then
   echo "offset:     $OFFSET"
   echo "searchterm: $SEARCHTERM"
   echo "limit:      ${LIMIT:-(sin límite)}"
+  echo "theia_workers: $THEIA_WORKERS"
   echo "etapas:     ${ORDEN[*]:I_DESDE:I_HASTA-I_DESDE+1}"
   exit 0
 fi
@@ -381,21 +386,18 @@ fi
 # ============================================================ 2. descarga
 if hacer descarga; then
   etapa "2/10  descargar clips"
-  ANTES=$([ -f "$FDLOG" ] && stat -c%s "$FDLOG" || echo 0)
+  T0_FALLOS="$(date '+%Y-%m-%d %H:%M:%S')"
   corre "$OUT/logs/02_download.log" "$POLY" download \
         --txt_file "$OUT/tsv/efectivo.tsv" --searchterm "$SEARCHTERM" \
         --output_dir "$OUT/videos/raw" --offset "$OFFSET" \
     || abortar "la descarga devolvió error" descarga
   RAW=$( { find "$OUT/videos/raw" -name '*.mp4' || true; } | wc -l)
-  # el log de fallos vive junto al repo y hace append entre pasadas: se reporta SOLO el delta
-  if [ -f "$FDLOG" ]; then
-    DESPues=$(stat -c%s "$FDLOG")
-    if [ "$DESPues" -gt "$ANTES" ]; then
-      tail -c +$((ANTES + 1)) "$FDLOG" > "$OUT/informes/failed_downloads_nuevos.log"
-    else
-      : > "$OUT/informes/failed_downloads_nuevos.log"
-    fi
-  fi
+  # El log de fallos es UNO para todo el repo (`uvrun` fija el cwd): con dos lotes bajando
+  # a la vez comparten fichero, asi que se filtra por lote y por hora de inicio en vez de
+  # por offset de bytes, que le copiaba a cada lote los fallos del otro.
+  "$PY" "$POLY_ROOT/tools/filtrar_fallos_descarga.py" --log "$FDLOG" \
+        --searchterm "$SEARCHTERM" --desde "$T0_FALLOS" \
+        --out "$OUT/informes/failed_downloads_nuevos.log" || true
   NFAIL=$(wc -l < "$OUT/informes/failed_downloads_nuevos.log" 2>/dev/null || echo 0)
   # un HTML de error pasa el control de tamaño: hay que abrir los vídeos
   OUT_DIR="$OUT" "$PY" - <<'PY'
@@ -691,7 +693,8 @@ if hacer theia; then
     [ -f "$POLY_ROOT/.env" ] \
       || echo "   ⚠️  no hay $POLY_ROOT/.env: si tampoco exportas THEIA_API_BASE/THEIA_MODEL, la anotacion visual fallara"
     corre "$OUT/logs/09_theia.log" "$POLY" theia --input_folder "$OUT" --n_persons 1 \
-          --db_name "$OUT/${LOTE_NOMBRE}.duckdb" || echo "   ⚠️  Theia terminó con avisos (intenta reintentar con --desde theia --force)"
+          --db_name "$OUT/${LOTE_NOMBRE}.duckdb" --workers "$THEIA_WORKERS" \
+      || echo "   ⚠️  Theia terminó con avisos (intenta reintentar con --desde theia --force)"
     # el resumen de theia es una linea propia; sin ella el 401 pasa desapercibido
     grep -o "\[theia\] ok=[0-9]* error=[0-9]*" "$OUT/logs/09_theia.log" | tail -1 || true
     grep -m1 -o "401[^)]*" "$OUT/logs/09_theia.log" \
