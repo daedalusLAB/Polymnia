@@ -61,6 +61,7 @@ fi
 LIMIT=""; GATE=0; MIN_VISIBLE=80; EXTENDED=1; README=""; SKIP_THEIA=0
 LIMPIEZA=1; CRITERIO_LIMPIEZA=todo; DICCIONARIO=1
 MAX_SIN_VOZ_PCT=5
+MAX_SIN_POSE_PCT=5
 THEIA_WORKERS=${POLYMNIA_THEIA_WORKERS:-4}
 TSV_SET=0; OFFSET_SET=0; SEARCHTERM_SET=0; LIMIT_SET=0; PRINT_CONFIG=0
 DESDE=tsv; HASTA=final; FORCE=0
@@ -99,6 +100,9 @@ Opciones:
   --max-sin-voz-pct F  umbral de clips descartados por falta de voz/prosodia que para el lote
                      (defecto 5; 0 lo desactiva). El clip descartado NO se publica y queda en
                      videos/descartados/sin_voz/ e informes/descartados_sin_voz.tsv
+  --max-sin-pose-pct F umbral de clips que OpenPose dejó sin una sola detección (defecto 5;
+                     0 lo desactiva). Se apartan en videos/descartados/sin_pose/ y
+                     informes/descartados_sin_pose.tsv; solo aborta si no queda ninguno
   --theia-workers N  peticiones simultaneas a Theia (defecto 4, o \$POLYMNIA_THEIA_WORKERS).
                      Con varios lotes a la vez, baja a 1-2: el endpoint devuelve 429
   --desde ETAPA      reanudar desde una etapa asumiendo que las anteriores ya están
@@ -145,6 +149,7 @@ while [ $# -gt 0 ]; do
     --sin-limpiar) LIMPIEZA=0; shift ;;
     --criterio-limpieza) CRITERIO_LIMPIEZA="$2"; shift 2 ;;
     --max-sin-voz-pct) MAX_SIN_VOZ_PCT="$2"; shift 2 ;;
+    --max-sin-pose-pct) MAX_SIN_POSE_PCT="$2"; shift 2 ;;
     --theia-workers) THEIA_WORKERS="$2"; shift 2 ;;
     --desde) DESDE="$2"; shift 2 ;;
     --hasta) HASTA="$2"; shift 2 ;;
@@ -231,6 +236,7 @@ if [ "$PRINT_CONFIG" -eq 1 ]; then
   echo "searchterm: $SEARCHTERM"
   echo "limit:      ${LIMIT:-(sin límite)}"
   echo "theia_workers: $THEIA_WORKERS"
+  echo "sin_pose_max_pct: $MAX_SIN_POSE_PCT"
   echo "etapas:     ${ORDEN[*]:I_DESDE:I_HASTA-I_DESDE+1}"
   exit 0
 fi
@@ -556,6 +562,17 @@ if hacer limpieza; then
         >> "$OUT/logs/06_limpieza.log" 2>&1 \
         || abortar "el R no pudo reclasificar $jd" limpieza
     done
+    # Clips que OpenPose dejo sin una sola deteccion: el R ya no revienta (deja
+    # num_persons.txt=0), se apartan con motivo y el lote sigue. El umbral para cuando el
+    # patron no son unos pocos clips sino OpenPose roto (o el lote se quedaria sin datos).
+    SINPOSE_OUT=$("$PY" "$POLY_ROOT/tools/descartes_sin_pose.py" --lote "$OUT" \
+                    --max-pct "$MAX_SIN_POSE_PCT" 2>&1) || {
+      printf '%s\n' "$SINPOSE_OUT" | tee -a "$OUT/logs/06_limpieza.log" >&2
+      abortar "demasiados clips sin pose (mira informes/descartados_sin_pose.tsv)" limpieza
+    }
+    printf '%s\n' "$SINPOSE_OUT" | tee -a "$OUT/logs/06_limpieza.log"
+    conteo limpieza clips_sin_pose \
+      "$(printf '%s\n' "$SINPOSE_OUT" | sed -n 's/^sin_pose=\([0-9][0-9]*\) .*/\1/p')"
   fi
   NPARQUET=$( { find "$OUT/dataset/1_persons/parquet_files" -name '*.parquet' 2>/dev/null || true; } | wc -l )
   MULTI=$( { find "$OUT/dataset" -maxdepth 1 -type d -name '*_persons' ! -name '1_persons' 2>/dev/null || true; } \
@@ -862,6 +879,9 @@ TOTAL=$(( $(date +%s) - INICIO_TOTAL ))
   echo "  vive en \`Polymnia/failed_downloads.log\` y hace append entre pasadas."
   echo "* \`munecas.csv\` — el score de todos los clips, incluidos los descartados."
   echo "* \`videos/descartados/<motivo>/\` — por qué se cayó cada clip."
+  echo "* \`informes/descartados_sin_pose.tsv\` — los clips que OpenPose dejó sin una sola"
+  echo "  detección (se apartan con su mp4 en videos/descartados/sin_pose/; umbral"
+  echo "  \`--max-sin-pose-pct\`, 5 % por defecto)."
   echo "* \`informes/descartados_sin_voz.tsv\` — los clips sin voz/prosodia que hefesto no metió"
   echo "  en la base (clip, motivo, origen). El umbral \`--max-sin-voz-pct\` (defecto 5 %) para el"
   echo "  lote cuando el patrón no es un hablante mudo sino una extracción de voz rota."
