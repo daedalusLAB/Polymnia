@@ -208,15 +208,30 @@ if [ -z "$TSV" ]; then
   # Los tabulados viven en MULTIFLOW_TSVs/<campaña>/Recurrence_Tabulations/: se busca en
   # cualquiera de las campañas (tanvir, ayesha, ...) en vez de clavar una carpeta.
   for candidato in "$OUT/tsv/${LOTE_NOMBRE}_Tab.txt" \
+                   "$OUT/tsv/${LOTE_NOMBRE}.txt" \
                    "${POLYMNIA_TSV_DIR:+${POLYMNIA_TSV_DIR}/${LOTE_NOMBRE}_Tab.txt}" \
+                   "${POLYMNIA_TSV_DIR:+${POLYMNIA_TSV_DIR}/${LOTE_NOMBRE}.txt}" \
                    $PWD/MULTIFLOW_TSVs/*/Recurrence_Tabulations/${LOTE_NOMBRE}_Tab.txt \
                    $RAIZ/../MULTIFLOW_TSVs/*/Recurrence_Tabulations/${LOTE_NOMBRE}_Tab.txt \
                    $RAIZ/MULTIFLOW_TSVs/*/Recurrence_Tabulations/${LOTE_NOMBRE}_Tab.txt \
                    $PWD/MULTIFLOW_TSVs/*/${LOTE_NOMBRE}_Tab.txt \
+                   $PWD/MULTIFLOW_TSVs/*/${LOTE_NOMBRE}.txt \
+                   $RAIZ/../MULTIFLOW_TSVs/*/${LOTE_NOMBRE}_Tab.txt \
+                   $RAIZ/../MULTIFLOW_TSVs/*/${LOTE_NOMBRE}.txt \
+                   $RAIZ/MULTIFLOW_TSVs/*/${LOTE_NOMBRE}_Tab.txt \
                    "$RAIZ/../MULTIFLOW_TSVs/${LOTE_NOMBRE}_Tab.txt" \
-                   "$RAIZ/MULTIFLOW_TSVs/${LOTE_NOMBRE}_Tab.txt"; do
+                   "$RAIZ/MULTIFLOW_TSVs/${LOTE_NOMBRE}_Tab.txt" \
+                   "$PWD/MULTIFLOW_TSVs/${LOTE_NOMBRE}.txt" \
+                   "$RAIZ/../MULTIFLOW_TSVs/${LOTE_NOMBRE}.txt" \
+                   "$RAIZ/MULTIFLOW_TSVs/${LOTE_NOMBRE}.txt"; do
     if [ -n "$candidato" ] && [ -f "$candidato" ]; then TSV="$candidato"; break; fi
   done
+fi
+if [ -z "$TSV" ] && [ -d "$OUT/tsv" ]; then
+  # Ultimo recurso: la copia que la etapa 1 dejo en el propio lote. Su nombre es el del TSV
+  # original (p.ej. ayesha_ago_d-time.txt), que no tiene por que coincidir con la carpeta
+  # (ayesha_ago_d_time): al reanudar, esa copia es la buena.
+  TSV="$(find "$OUT/tsv" -maxdepth 1 -name '*.txt' -print -quit 2>/dev/null || true)"
 fi
 if [ "$SEARCHTERM_SET" -eq 0 ]; then
   SEARCHTERM="$(printf '%s' "$LOTE_NOMBRE" | tr 'A-Z' 'a-z')"
