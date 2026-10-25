@@ -123,6 +123,13 @@ def main():
         check("POLYMNIA_THEIA_WORKERS también manda", campo(p.stdout, "theia_workers") == "2",
               campo(p.stdout, "theia_workers"))
 
+        # 9. umbral de clips sin pose: 5 % por defecto, configurable
+        check("el umbral de sin_pose es 5 %", campo(p.stdout, "sin_pose_max_pct") == "5",
+              campo(p.stdout, "sin_pose_max_pct"))
+        p = corre(tmp, "--lote", "lotes/FREQ777", "--max-sin-pose-pct", "2")
+        check("--max-sin-pose-pct lo cambia", campo(p.stdout, "sin_pose_max_pct") == "2",
+              campo(p.stdout, "sin_pose_max_pct"))
+
     print()
     if FAIL:
         print(f"TOTAL: FAIL {', '.join(FAIL)}")

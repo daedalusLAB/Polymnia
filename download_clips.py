@@ -3,8 +3,19 @@
 import argparse
 import os
 import subprocess
+import sys
 import time
 import logging
+
+
+def searchterm_valido(termino: str) -> bool:
+    """Alfanumerico con `_` o `-`: el searchterm se pega al nombre de cada clip.
+
+    El guion se acepta porque las campanas de NewsScape lo llevan en el nombre
+    (ayesha_ago_d-time) y aguas abajo el searchterm se usa tal cual, sin trocear. Espacios,
+    `/` y comillas no: romperian el nombre del fichero.
+    """
+    return bool(termino) and termino.replace("_", "").replace("-", "").isalnum()
 
 def download_clip_with_retries(line, searchterm, output_dir, offset, max_retries=3):
     try:
@@ -81,10 +92,13 @@ def main():
     parser.add_argument("--output_dir", required=True, help="Directorio de salida para los clips")
     args = parser.parse_args()
 
-    # Validación básica para searchterm: permite alfanumérico y guiones bajos
-    if not args.searchterm.replace("_", "").isalnum():
-        print("El término de búsqueda debe ser alfanumérico o contener solo '_'")
-        return
+    # Validacion del searchterm: alfanumerico y separadores `_`/`-`. Si no vale, se sale
+    # con error: antes un `return` dejaba exit 0 y el pipeline abortaba despues con un
+    # "no bajo ni un clip" que no decia la causa.
+    if not searchterm_valido(args.searchterm):
+        print("El término de búsqueda debe ser alfanumérico o contener solo '_' o '-'",
+              file=sys.stderr)
+        return 2
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -111,5 +125,5 @@ def main():
     print("[INFO] Proceso finalizado.")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
 

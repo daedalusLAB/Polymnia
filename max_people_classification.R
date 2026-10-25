@@ -80,9 +80,23 @@ tryCatch({
 
 # Extract clip ID
 clip$id
-
-# Determine number of people detected in the clip
-num_people <- max(clip$people_id)
+# Un clip sin una sola deteccion (OpenPose devolvio {"people": []} en todos los frames)
+# hacia que dfMaker devolviera NULL y `write_parquet(NULL)` reventara, tumbando el lote entero
+# en la etapa de limpieza. Se descarta aqui: num_persons.txt = 0, sin parquet y exit 0. La
+# etapa 6 cuenta esos clips (tools/descartes_sin_pose.py) y aplica su umbral.
+sin_pose <- is.null(clip) || nrow(clip) == 0
+if (!sin_pose) {
+  num_people <- suppressWarnings(max(clip$people_id))
+  sin_pose <- !is.finite(num_people)
+} else {
+  num_people <- 0
+}
+if (sin_pose) {
+  log_info("sin pose: el clip no tiene ninguna deteccion; se descarta sin escribir parquet")
+  write(0, file = file.path(input_folder, "num_persons.txt"))
+  cat("SIN_POSE", basename(dirname(input_folder)), "\n")
+  quit(save = "no", status = 0)
+}
 
 # Define output path based on expression_year_dir
 output_path <- file.path(
