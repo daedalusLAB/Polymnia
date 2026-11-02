@@ -300,8 +300,9 @@ abortar() {
   echo "   Logs en $OUT/logs/" >&2
   exit 1
 }
-tsv_filtrado() {                       # el TSV efectivo, con --limit aplicado
-  if [ -n "$LIMIT" ]; then head -n "$LIMIT" "$TSV"; else cat "$TSV"; fi
+tsv_filtrado() {                       # el TSV efectivo: sin duplicados y con --limit aplicado
+  local origen="${1:-$TSV}"
+  if [ -n "$LIMIT" ]; then head -n "$LIMIT" "$origen"; else cat "$origen"; fi
 }
 
 verificar_holgura() {                  # mide en la duracion del clip con que holgura se corto
@@ -349,7 +350,19 @@ corre "$OUT/logs/00_procedencia.log" "$POLY" python "$POLY_ROOT/tools/tool_prove
 if hacer tsv; then
   etapa "1/10  validar el tabulado"
   cp -f "$TSV" "$OUT/tsv/$(basename "$TSV")"
-  tsv_filtrado > "$OUT/tsv/efectivo.tsv"
+  # Los tabs de NewsScape traen filas duplicadas exactas (~1 %): mismo fichero, mismo id y
+  # mismos tiempos. Sin deduplicar, la descarga escribe dos veces el mismo mp4 (y una se
+  # pierde) y la etapa final aborta con "dos líneas producen el mismo id de clip".
+  # Se deduplica ANTES de --limit para que "N líneas" signifiquen N clips únicos.
+  awk -F'\t' '!seen[$1 FS $2 FS $3 FS $4 FS $5 FS $6]++' "$TSV" > "$OUT/tsv/sin_duplicados.tsv"
+  DUP_TAB=$(( $(wc -l < "$TSV") - $(wc -l < "$OUT/tsv/sin_duplicados.tsv") ))
+  if [ "$DUP_TAB" -gt 0 ]; then
+    awk -F'\t' 'seen[$1 FS $2 FS $3 FS $4 FS $5 FS $6]++' "$TSV" \
+      > "$OUT/informes/duplicados_tab.tsv"
+    echo "   ⚠️  $DUP_TAB lineas duplicadas en el tab: se descartan (informes/duplicados_tab.tsv)"
+  fi
+  conteo tsv lineas_duplicadas "$DUP_TAB"
+  tsv_filtrado "$OUT/tsv/sin_duplicados.tsv" > "$OUT/tsv/efectivo.tsv"
   (cd "$OUT/tsv" && sha256sum "efectivo.tsv" "$(basename "$TSV")" > SHA256SUMS)
   NLINES=$(wc -l < "$OUT/tsv/efectivo.tsv")
   if [ "$NLINES" -eq 0 ]; then abortar "el TSV no tiene líneas" tsv; fi
@@ -890,6 +903,8 @@ TOTAL=$(( $(date +%s) - INICIO_TOTAL ))
   echo "## Qué revisar a mano"
   echo
   echo "* \`informes/videos_raros.txt\` — mp4 que no se abren (un HTML de error pasa el control de tamaño)."
+  echo "* \`informes/duplicados_tab.tsv\` — líneas del tab que repetían un clip (mismo fichero, id y"
+  echo "  tiempos); se descartan antes de descargar y no cuentan para \`--limit\`."
   echo "* \`informes/failed_downloads_nuevos.log\` — solo los fallos de ESTA pasada; el log original"
   echo "  vive en \`Polymnia/failed_downloads.log\` y hace append entre pasadas."
   echo "* \`munecas.csv\` — el score de todos los clips, incluidos los descartados."
