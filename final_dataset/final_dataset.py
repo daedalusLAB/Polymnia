@@ -128,6 +128,8 @@ def clip_id(fields, offset, searchterm):
 def read_tab(path, offset, searchterm):
     """Una fila por línea del tab, con su `id` candidato y su contexto."""
     rows = []
+    vistos = {}
+    repetidas = 0
     with open(path, "r", encoding="utf-8") as handle:
         for number, line in enumerate(handle, 1):
             if not line.strip():
@@ -145,7 +147,21 @@ def read_tab(path, offset, searchterm):
                 raise FinalDatasetError(f"{path}:{number}: intervalo invertido o vacío "
                                         f"(start {start} >= end {end})")
             divisor = fractional_divisor(fields[0])
-            rows.append({"id": clip_id(fields, offset, searchterm),
+            ident = clip_id(fields, offset, searchterm)
+            clave = tuple(fields[:6])
+            if ident in vistos:
+                if vistos[ident] == clave:
+                    # Fila repetida exacta en el tab: misma descarga. La etapa 1 ya las quita;
+                    # esto cubre un lote reanudado con un efectivo.tsv anterior al arreglo.
+                    repetidas += 1
+                    continue
+                # Ids iguales con filas distintas: eso NO es una repetición, es una holgura o
+                # unos tiempos mal puestos que juntarían dos clips. Sigue siendo un aborto.
+                raise FinalDatasetError(
+                    f"{path}:{number}: dos clips distintos acaban en el mismo id ({ident}); "
+                    f"revisa los tiempos del tab y el --offset")
+            vistos[ident] = clave
+            rows.append({"id": ident,
                          "newscape_clip_id": fields[1],
                          "program": os.path.basename(fields[0]).replace(".txt", ""),
                          "tab_start_raw": round(int(fields[2]) + int(fields[3]) / divisor, 3),
@@ -154,11 +170,8 @@ def read_tab(path, offset, searchterm):
                          "context": fields[6].strip() if len(fields) > 6 else None})
     if not rows:
         raise FinalDatasetError(f"{path}: no tiene ninguna línea con datos")
-    counts = pd.DataFrame(rows)["id"].value_counts()
-    doubled = counts[counts > 1]
-    if not doubled.empty:
-        raise FinalDatasetError(f"{path}: dos líneas producen el mismo id de clip "
-                                f"(e.g. {doubled.index[0]}); revisa los tiempos del tab")
+    if repetidas:
+        print(f"   ⚠️  {repetidas} línea(s) del tab repetían un clip exacto: se usan una vez")
     return pd.DataFrame(rows)
 
 
